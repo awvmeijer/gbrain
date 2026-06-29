@@ -40,13 +40,13 @@ gbrain think "Digest my finance YouTube creators' latest videos: themes, tickers
 Edit `channels.txt` to add/remove creators. Schedule the collect+embed as a
 Minion cron (Phase 3) for a hands-off daily digest.
 
-## Known limitations / follow-ups
-- **Thin digests**: `think` retrieves the top-scoring chunks (often the video
-  intro), so cross-creator digests can miss mid-video analysis. Enhancement:
-  a per-video summarization pass (feed each FULL transcript to the Max bridge —
-  Claude's 200k context fits a whole transcript — and store a digest page).
-  Tracked as a Phase-3 follow-up.
-- **Channel resolution**: a handful of handles (e.g. `@ARKInvest2015`) don't
-  expose the channel id in the canonical/externalId markers; add a fallback
-  (parse `/videos` or a `ytInitialData` `browseId`) when needed.
-- Transcripts capped at `--max-chars` (default 40k) to bound embed size.
+## Notes
+- **Per-video digests** (`--summarize`, used by the daily cron): leads each
+  page with a Claude digest (via the Max bridge — 200k ctx fits a full
+  transcript): thesis + per-ticker calls with direction + levels. Pages then
+  carry `## Digest` above `## Transcript`, so retrieval/digests see analysis,
+  not just the intro. Only new (unseen) videos are summarized, so the daily
+  cost is a handful of calls.
+- **Channel resolution** falls back to `/videos` + `/about` + a `browseId`
+  pattern (fixes `@ARKInvest2015`).
+- Transcripts capped at `--max-chars` (default 40k).

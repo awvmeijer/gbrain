@@ -12,7 +12,7 @@ log() { echo "[$(date '+%F %T')] $*"; }
 log "collect: discord"
 "$BV" "$GB/recipes/discord-to-brain/collect.py" "$ING" || log "  discord collect failed"
 log "collect: youtube"
-"$YV" "$GB/recipes/youtube-to-brain/collect.py" "$ING" --limit 1 || log "  youtube collect failed"
+"$YV" "$GB/recipes/youtube-to-brain/collect.py" "$ING" --limit 1 --summarize || log "  youtube collect failed"
 log "collect: x (fintwit)"
 "$BV" "$GB/recipes/x-to-brain/collect.py" "$ING" --per-handle-sleep 1.2 --max 25 || log "  x collect failed"
 

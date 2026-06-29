@@ -97,11 +97,42 @@ def _slug(h: str) -> str:
     return h.lstrip("@").lower()
 
 
+_SUMM_SYS = (
+    "You summarize a finance YouTube video transcript into a tight digest. "
+    "Output ONLY: a 1-2 sentence thesis; a bulleted list of tickers/calls with "
+    "direction (bullish/bearish/watch); key price levels, catalysts, or dates; "
+    "and any notable or contrarian claims. No preamble, no filler."
+)
+
+
+def _summarize(transcript: str, bridge: str) -> str | None:
+    """Per-video digest via the Max bridge (Claude 200k ctx fits a transcript)."""
+    try:
+        r = httpx.post(
+            f"{bridge}/v1/chat/completions",
+            json={
+                "model": "claude-sonnet",
+                "messages": [
+                    {"role": "system", "content": _SUMM_SYS},
+                    {"role": "user", "content": transcript[:60000]},
+                ],
+            },
+            timeout=150,
+        )
+        r.raise_for_status()
+        return r.json()["choices"][0]["message"]["content"].strip()
+    except Exception as e:  # noqa: BLE001 — digest is best-effort; keep the transcript page
+        print(f"    summarize miss: {type(e).__name__}", file=sys.stderr)
+        return None
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("output_dir")
     ap.add_argument("--limit", type=int, default=2, help="latest videos per channel")
     ap.add_argument("--max-chars", type=int, default=40000, help="cap transcript length")
+    ap.add_argument("--summarize", action="store_true", help="per-video digest via the Max bridge")
+    ap.add_argument("--bridge", default="http://127.0.0.1:8789", help="Max bridge base url")
     args = ap.parse_args()
 
     out_root = Path(args.output_dir)
@@ -129,6 +160,8 @@ def main() -> None:
                     txt = txt[: args.max_chars] + "\n\n[transcript truncated]"
                 title = v["title"] or v["id"]
                 safe_title = title.replace('"', "'")
+                digest = _summarize(txt, args.bridge) if args.summarize else None
+                section = f"## Digest\n\n{digest}\n\n## Transcript\n\n" if digest else ""
                 body = (
                     f"---\n"
                     f"title: {safe_title}\n"
@@ -138,11 +171,12 @@ def main() -> None:
                     f"video_id: {v['id']}\n"
                     f"url: https://youtu.be/{v['id']}\n"
                     f"date: {v['published']}\n"
+                    f"has_digest: {'true' if digest else 'false'}\n"
                     f"tags: [youtube, finance, {_slug(handle)}]\n"
                     f"---\n\n"
                     f"# {safe_title}\n\n"
                     f"_{handle} · {v['published']} · https://youtu.be/{v['id']}_\n\n"
-                    f"{txt}\n"
+                    f"{section}{txt}\n"
                 )
                 p = out_root / "youtube" / _slug(handle) / f"{v['id']}.md"
                 p.parent.mkdir(parents=True, exist_ok=True)
