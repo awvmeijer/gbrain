@@ -19,6 +19,8 @@ log "collect: telegram (scanners)"
 # Read-only over the official Telegram API; no-ops with a clear message until
 # TELEGRAM_* secrets + session exist (recipes/telegram-to-brain/README.md).
 "$BV" "$GB/recipes/telegram-to-brain/collect.py" "$ING" --limit 50 || log "  telegram collect failed (set up creds?)"
+log "collect: manual captures (iCloud BrainCapture/)"
+"$BV" "$GB/recipes/manual-capture/import_captures.py" "$ING" || log "  capture import failed"
 
 log "import + embed"
 gbrain import "$ING" --no-embed || log "  import failed"
@@ -28,7 +30,7 @@ log "synthesize daily digest"
 SINCE="$(date -v-2d +%F 2>/dev/null || date +%F)"
 # Runs the fintwit-analyst skill's lens, scoped to ~2d, and cleans think's output
 # (strips the echoed question + Model footer; renders any raw JSON).
-DIGEST="$(gbrain think "Across my fintwit X feed, finance YouTube creators, Telegram scanner channels, and Discord from the last day: group by theme; name every ticker with the source's direction (bullish/bearish/watch) + any level or catalyst; LEAD with what changed (new calls, reversals, conviction shifts); call out where sources conflict, both sides attributed; attribute every line to a source. Do NOT treat mention volume as a buy/sell signal. (skill: fintwit-analyst)" --since "$SINCE" 2>/dev/null | "$BV" "$GB/infra/clean_digest.py")"
+DIGEST="$(gbrain think "Across my fintwit X feed, finance YouTube creators, Telegram scanner channels, and Discord from the last day: group by theme; name every ticker with the source's direction (bullish/bearish/watch) + any level or catalyst; treat the Telegram scanner ticker lists as a SCREEN (no direction), and LEAD with OVERLAPS — a scanner-flagged ticker that an X/YouTube source also has a directional take on; then what changed (new calls, reversals, conviction shifts); call out where sources conflict, both sides attributed; attribute every line to a source. Do NOT treat mention volume as a buy/sell signal. (skill: fintwit-analyst)" --since "$SINCE" 2>/dev/null | "$BV" "$GB/infra/clean_digest.py")"
 
 if [ -n "$DIGEST" ]; then
   log "post digest to Discord"

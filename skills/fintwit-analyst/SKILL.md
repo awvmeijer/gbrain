@@ -1,6 +1,6 @@
 ---
 name: fintwit-analyst
-description: Synthesize the X (fintwit), YouTube-creator, and Discord feeds into a daily actionable finance read — tickers, catalysts, what changed, and source conflicts. Volume is never a signal.
+description: Synthesize the X (fintwit), YouTube-creator, Telegram-scanner, and Discord feeds into a daily actionable finance read — tickers, catalysts, what changed, scanner×conviction overlaps, and source conflicts. Volume is never a signal.
 triggers:
   - "fintwit digest"
   - "finance feed digest"
@@ -19,7 +19,7 @@ mutating: false
 
 # Fintwit Analyst Skill
 
-Turn the ingested feeds (`source: x`, `source: youtube`, `source: discord`) into a
+Turn the ingested feeds (`source: x`, `source: youtube`, `source: telegram`, `source: discord`) into a
 tight, actionable finance read. The reader is the user — a hands-on investor who
 follows ~50 fintwit handles + a handful of finance YouTube creators and wants the
 signal without scrolling.
@@ -38,6 +38,13 @@ signal without scrolling.
   a name moving from watch→conviction) over a flat list.
 - **Conflicts are explicit**: when sources disagree on a name (e.g. one bullish,
   one fading it), show both with attribution — don't average them away.
+- **Scanner lists are a SCREEN, not a call.** The Telegram scanner channels
+  (`source: telegram` — e.g. Technical/Fundamental Scanner) emit ranked ticker
+  lists with no direction; treat a ticker's presence as "flagged by a screen,"
+  never as bullish/bearish on its own. The high-signal move is the **overlap**:
+  a scanner-flagged ticker that an X or YouTube source *also* has a directional
+  take on. Lead with those — a screen hit + a human thesis is worth more than
+  either alone.
 - **No financial advice, no aggregated sentiment-as-signal.** This is a digest of
   what your follows said, not a recommendation.
 - Read-only: do not create/modify brain pages unless explicitly asked.
@@ -61,10 +68,14 @@ signal without scrolling.
 3. **Synthesize** with `think` (deep tier → Claude via the Max bridge):
 
    ```bash
-   gbrain think "Across my fintwit X feed, finance YouTube creators, and Discord from the last day: group by theme, name every ticker with the source's direction + any level/catalyst, lead with what CHANGED, and call out where sources conflict. Attribute every line. Do not treat mention volume as a signal."
+   gbrain think "Across my fintwit X feed, finance YouTube creators, Telegram scanner channels, and Discord from the last day: group by theme, name every ticker with the source's direction + any level/catalyst, lead with what CHANGED, and call out where sources conflict. Treat the Telegram scanner ticker lists as a SCREEN (no direction) — the highest-signal items are OVERLAPS where a scanner-flagged ticker also has a directional take from an X/YouTube source; surface those first. Attribute every line. Do not treat mention volume as a signal."
    ```
 
 4. **Shape the output** as:
+   - **Scanner × conviction** — tickers that a Telegram scanner flagged AND an
+     X/YouTube source has a directional take on: `$SYM — screened by <scanner> +
+     <direction> (<source, date>): <thesis/level>`. This section leads when there
+     are overlaps; omit it when there are none (don't pad it with screen-only names).
    - **What changed** — 3-6 bullets: new calls, reversals, conviction shifts.
    - **By theme** — each ticker: `$SYM — <direction> (<source, date>): <level/catalyst/claim>`.
    - **Conflicts** — disagreements between sources, both sides attributed.
