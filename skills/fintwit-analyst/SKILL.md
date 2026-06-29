@@ -49,7 +49,7 @@ signal without scrolling.
 
    ```bash
    gbrain query "tickers, catalysts, market themes, calls" --rerank
-   gbrain list-pages --tag finance     # recent x/youtube/discord pages
+   gbrain list --tag finance           # recent x/youtube/discord pages
    ```
 
    For YouTube, the `## Digest` section of each video page already holds the

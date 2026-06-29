@@ -1,0 +1,6 @@
+// Routing eval fixtures for skills/what-needs-me. Each intent includes a trigger substring.
+{"intent":"what needs me today","expected_skill":"what-needs-me"}
+{"intent":"what needs my attention right now","expected_skill":"what-needs-me"}
+{"intent":"anything need a decision from me","expected_skill":"what-needs-me"}
+{"intent":"show my open loops","expected_skill":"what-needs-me"}
+{"intent":"what should I act on this morning","expected_skill":"what-needs-me"}

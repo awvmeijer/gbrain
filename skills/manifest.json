@@ -358,6 +358,11 @@
       "name": "fintwit-analyst",
       "path": "fintwit-analyst/SKILL.md",
       "description": "Synthesize the X (fintwit), YouTube-creator, and Discord feeds into a daily actionable finance read — tickers, catalysts, what changed, source conflicts. Volume is never a signal."
+    },
+    {
+      "name": "what-needs-me",
+      "path": "what-needs-me/SKILL.md",
+      "description": "Surface what needs the user's attention or a decision now — pending approvals (proposals-as-pages), open decisions, follow-ups, flagged feed signals. Ranked, read-only."
     }
   ],
   "dependencies": {
