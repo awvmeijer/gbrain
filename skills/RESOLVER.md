@@ -51,6 +51,7 @@ wins; fix the row.
 | User shares a link, article, tweet, or idea | `skills/idea-ingest/SKILL.md` |
 | "fintwit digest", "finance feed digest", "what are my finance follows saying", "daily market read from my feeds", "tickers and catalysts from my feeds" | `skills/fintwit-analyst/SKILL.md` |
 | "what needs me", "what needs my attention", "anything need a decision", "open loops", "what should I act on" | `skills/what-needs-me/SKILL.md` |
+| "weekly reflection", "reflect on my week", "what did I learn this week", "weekly review", "patterns this week" | `skills/weekly-reflection/SKILL.md` |
 | "watch this video", "process this YouTube link", "ingest this PDF", "save this podcast", "process this book", "summarize this book", "PDF book", "ingest it into my brain", "what's in this screenshot", "check out this repo" | `skills/media-ingest/SKILL.md` |
 | Meeting transcript received | `skills/meeting-ingestion/SKILL.md` |
 | Generic "ingest this" (auto-routes to above) | `skills/ingest/SKILL.md` |

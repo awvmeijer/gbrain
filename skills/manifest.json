@@ -363,6 +363,11 @@
       "name": "what-needs-me",
       "path": "what-needs-me/SKILL.md",
       "description": "Surface what needs the user's attention or a decision now — pending approvals (proposals-as-pages), open decisions, follow-ups, flagged feed signals. Ranked, read-only."
+    },
+    {
+      "name": "weekly-reflection",
+      "path": "weekly-reflection/SKILL.md",
+      "description": "Review the week's brain and write a reflection page — recurring themes, what changed, which feed calls played out, conviction shifts. The reflection Brains never did; rides the dream cycle + skillopt."
     }
   ],
   "dependencies": {

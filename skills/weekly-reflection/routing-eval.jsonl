@@ -1,0 +1,6 @@
+// Routing eval fixtures for skills/weekly-reflection. Each intent includes a trigger substring.
+{"intent":"give me a weekly reflection","expected_skill":"weekly-reflection"}
+{"intent":"help me reflect on my week","expected_skill":"weekly-reflection"}
+{"intent":"remind me what did I learn this week","expected_skill":"weekly-reflection"}
+{"intent":"run my weekly review","expected_skill":"weekly-reflection"}
+{"intent":"what were the patterns this week","expected_skill":"weekly-reflection"}
