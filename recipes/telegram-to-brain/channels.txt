@@ -1,0 +1,8 @@
+# Telegram channels to ingest — one case-insensitive title substring per line.
+# Matched against the channels your account is subscribed to, so private/paid
+# invite-only channels work (no public @username needed). `#` starts a comment.
+#
+# Run collect.py with this file empty to print every channel your account can
+# see, then paste the titles you want here.
+Fundamental Scanner
+Technical Scanner
