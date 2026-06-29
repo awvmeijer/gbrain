@@ -42,15 +42,23 @@ def _channels() -> list[str]:
 
 
 def _resolve_channel_id(client: httpx.Client, handle: str) -> str | None:
-    r = client.get(f"https://www.youtube.com/{handle}", headers=UA, follow_redirects=True, timeout=25)
-    for pat in (
+    pats = (
         r'<link rel="canonical" href="https://www\.youtube\.com/channel/(UC[\w-]+)"',
         r'"externalId":"(UC[\w-]+)"',
+        r'"browseId":"(UC[\w-]+)"',
         r'channel/(UC[\w-]+)',
-    ):
-        m = re.search(pat, r.text)
-        if m:
-            return m.group(1)
+    )
+    # Some handle pages don't expose the id on the root tab; /videos and /about
+    # do (e.g. @ARKInvest2015). Try in order.
+    for suffix in ("", "/videos", "/about"):
+        try:
+            r = client.get(f"https://www.youtube.com/{handle}{suffix}", headers=UA, follow_redirects=True, timeout=25)
+        except Exception:  # noqa: BLE001
+            continue
+        for pat in pats:
+            m = re.search(pat, r.text)
+            if m:
+                return m.group(1)
     return None
 
 
