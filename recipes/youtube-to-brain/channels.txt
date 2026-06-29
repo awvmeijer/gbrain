@@ -1,0 +1,12 @@
+# Finance YouTube creators to ingest (one @handle per line; # = comment).
+@amitinvesting
+@papergainsinc
+@stevenfiorillo1
+@wolf_financial
+@TheRonnieVShow
+@ARKInvest2015
+@Fundstrat_Direct
+@Funofinvesting
+@TimothySykesTrader
+@CouchInvestor
+@EndicottInvests
