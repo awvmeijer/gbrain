@@ -5,7 +5,7 @@
 export PATH="$HOME/.bun/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 GB="$HOME/gbrain"
 ING="$HOME/brains-ingest"
-BV="$HOME/brain/.venv/bin/python"        # has httpx + keyring
+BV="$GB/sidecars/.venv/bin/python"        # self-contained: httpx + keyring
 YV="$GB/recipes/youtube-to-brain/.venv/bin/python"
 log() { echo "[$(date '+%F %T')] $*"; }
 

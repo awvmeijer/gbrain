@@ -56,3 +56,4 @@ graphify-out/
 .coverage/
 logs/
 recipes/**/.venv/
+sidecars/.venv/

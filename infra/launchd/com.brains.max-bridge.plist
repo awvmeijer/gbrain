@@ -6,19 +6,17 @@
   <string>com.brains.max-bridge</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/Users/awvmeijer/brain/.venv/bin/python</string>
+    <string>/Users/awvmeijer/gbrain/sidecars/.venv/bin/python</string>
     <string>/Users/awvmeijer/gbrain/sidecars/max-bridge/server.py</string>
   </array>
   <key>EnvironmentVariables</key>
   <dict>
     <key>MAXBRIDGE_PORT</key>
     <string>8789</string>
-    <key>BRAIN_HOME</key>
-    <string>/Users/awvmeijer/brain</string>
     <!-- claude CLI (Max-plan auth) lives in /opt/homebrew/bin; launchd's
          default PATH omits it, so the bridge's subprocess calls would fail. -->
     <key>PATH</key>
-    <string>/opt/homebrew/bin:/Users/awvmeijer/brain/.venv/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <string>/opt/homebrew/bin:/Users/awvmeijer/gbrain/sidecars/.venv/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
   </dict>
   <key>WorkingDirectory</key>
   <string>/Users/awvmeijer/gbrain</string>

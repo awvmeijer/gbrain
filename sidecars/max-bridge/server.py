@@ -6,8 +6,9 @@ surface (`/v1/chat/completions`, `/v1/models`, `/health`) backed by the SDK,
 so GBrain's `max-bridge` recipe (an `openai-compatible` recipe pointed here)
 gets **flat-fee Claude Max** reasoning instead of a metered Anthropic key.
 
-It reuses `~/brain/brain/llm/claude.py` VERBATIM (the sanctioned Claude
-chokepoint: `complete`/`stream`/`ping`, Max-plan auth inherited from the CLI).
+It vendors the claude-agent-sdk wrapper as `_claude_sdk.py` (`complete`/
+`stream`/`ping`; Max-plan auth inherited from the local `claude` CLI). No
+dependency on the old ~/brain repo.
 
 Deliberately:
 - **No `/v1/embeddings`.** Embeddings go straight to Ollama (bge-m3). The Max
@@ -16,11 +17,10 @@ Deliberately:
   deep *synthesis*, not tool-calling/subagent loops. GBrain's `max-bridge`
   recipe declares `supports_tools: false` so the gateway never sends tools here.
 
-Run (uses the brain venv, which already has claude-agent-sdk + fastapi):
-    ~/brain/.venv/bin/python sidecars/max-bridge/server.py
+Run (self-contained sidecar venv):
+    sidecars/.venv/bin/python sidecars/max-bridge/server.py
 Env:
     MAXBRIDGE_PORT   (default 8789)
-    BRAIN_HOME       (default ~/brain) — where brain/llm/claude.py lives
     MAXBRIDGE_MAX_CONCURRENCY (default 2) — cold-start is slow; cap parallelism
 """
 
@@ -34,12 +34,9 @@ import sys
 import time
 from pathlib import Path
 
-# Make `brain.llm.claude` importable (reuse, don't reimplement, the SDK call).
-_BRAIN_HOME = os.environ.get("BRAIN_HOME") or str(Path.home() / "brain")
-if _BRAIN_HOME not in sys.path:
-    sys.path.insert(0, _BRAIN_HOME)
-
-from brain.llm import claude  # noqa: E402
+# Vendored claude-agent-sdk wrapper (self-contained — no ~/brain dependency).
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import _claude_sdk as claude  # noqa: E402
 
 from fastapi import FastAPI, Request  # noqa: E402
 from fastapi.responses import JSONResponse, StreamingResponse  # noqa: E402
