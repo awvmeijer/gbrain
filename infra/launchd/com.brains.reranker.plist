@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.brains.reranker</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/opt/homebrew/bin/llama-server</string>
+    <string>-m</string>
+    <string>/Users/awvmeijer/brain/data/models/bge-reranker-v2-m3-Q8_0.gguf</string>
+    <string>--reranking</string>
+    <string>--port</string>
+    <string>8081</string>
+    <string>--alias</string>
+    <string>bge-reranker-v2-m3</string>
+    <string>--ctx-size</string>
+    <string>8192</string>
+  </array>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>StandardOutPath</key>
+  <string>/Users/awvmeijer/gbrain/logs/reranker.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/awvmeijer/gbrain/logs/reranker.log</string>
+</dict>
+</plist>
