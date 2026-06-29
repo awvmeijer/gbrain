@@ -9,7 +9,8 @@ WEEK="$(date +%Y-W%V)"
 log() { echo "[$(date '+%F %T')] $*"; }
 
 log "reflecting on week $WEEK"
-OUT="$(gbrain think "Reflect on the brain's last 7 days across my fintwit X, YouTube, and Discord feeds. Write a WEEK-LEVEL reflection, not a re-digest: (1) recurring themes/tickers and how attention shifted day to day; (2) conviction changes by source (who moved watch->conviction or reversed); (3) calls that visibly played out or broke this week; (4) what I engaged with or flagged; (5) what to watch next week. Attribute every point to a source page. Be honest if the week was thin. (skill: weekly-reflection)" 2>/dev/null)"
+SINCE="$(date -v-8d +%F 2>/dev/null || date +%F)"
+OUT="$(gbrain think "Reflect on the brain's last 7 days across my fintwit X, YouTube, and Discord feeds. Write a WEEK-LEVEL reflection, not a re-digest: (1) recurring themes/tickers and how attention shifted day to day; (2) conviction changes by source (who moved watch->conviction or reversed); (3) calls that visibly played out or broke this week; (4) what I engaged with or flagged; (5) what to watch next week. Attribute every point to a source page. Be honest if the week was thin. (skill: weekly-reflection)" --since "$SINCE" 2>/dev/null | "$BV" "$GB/infra/clean_digest.py")"
 
 if [ -z "$OUT" ]; then
   log "no reflection produced; skipping"
