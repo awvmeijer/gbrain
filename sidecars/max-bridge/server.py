@@ -29,6 +29,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -102,6 +103,51 @@ def _split_messages(messages: list[dict]) -> tuple[str, str | None]:
     return prompt, system
 
 
+# --- JSON-mode enforcement -------------------------------------------------
+# GBrain's `think` (and other structured callers) ask the model for a JSON
+# object in the prompt, then JSON.parse the reply. Claude via the CLI often
+# returns prose instead → LLM_OUTPUT_NOT_JSON + regex citation fallback. When
+# a request clearly wants JSON, nudge hard and unwrap the reply so GBrain gets
+# clean JSON. Detection is conservative (only fires on explicit JSON asks).
+_JSON_DIRECTIVE = (
+    "CRITICAL OUTPUT FORMAT: Respond with ONLY a single valid JSON object "
+    "matching the requested schema. No markdown code fences, no prose before "
+    "or after the JSON."
+)
+_FENCE_HEAD = re.compile(r"^```(?:json)?\s*\n?", re.IGNORECASE)
+
+
+def _wants_json(prompt: str, system: str | None) -> bool:
+    blob = ((system or "") + "\n" + (prompt or "")).lower()
+    if "json" not in blob:
+        return False
+    return any(
+        k in blob
+        for k in ('"answer"', '"citations"', '"gaps"', "json object", "valid json",
+                  "respond with json", "return json", "as json", "json schema")
+    )
+
+
+def _rf_is_json(rf) -> bool:
+    return isinstance(rf, dict) and str(rf.get("type", "")).startswith("json")
+
+
+def _extract_json(text: str) -> str:
+    """Best-effort: return clean JSON from a reply that may be fenced or
+    prose-wrapped. Falls back to the raw text if no object is found."""
+    s = text.strip()
+    if s.startswith("```"):
+        s = _FENCE_HEAD.sub("", s).strip()
+        if s.endswith("```"):
+            s = s[: s.rfind("```")].strip()
+    if s.startswith("{") and s.endswith("}"):
+        return s
+    i, j = s.find("{"), s.rfind("}")
+    if 0 <= i < j:
+        return s[i : j + 1]
+    return text
+
+
 @app.get("/health")
 async def health():
     res = await run_in_threadpool(claude.ping, _PROBE_MODEL)
@@ -127,6 +173,9 @@ async def chat_completions(req: Request):
     sent_model = body.get("model")
     model = _resolve_model(sent_model)
     prompt, system = _split_messages(body.get("messages") or [])
+    want_json = _wants_json(prompt, system) or _rf_is_json(body.get("response_format"))
+    if want_json:
+        system = (system + "\n\n" if system else "") + _JSON_DIRECTIVE
     stream = bool(body.get("stream"))
     created = int(time.time())
     cid = f"chatcmpl-maxbridge-{created}"
@@ -144,7 +193,10 @@ async def chat_completions(req: Request):
             "choices": [
                 {
                     "index": 0,
-                    "message": {"role": "assistant", "content": result.text},
+                    "message": {
+                        "role": "assistant",
+                        "content": _extract_json(result.text) if want_json else result.text,
+                    },
                     "finish_reason": "stop",
                 }
             ],
