@@ -30,6 +30,7 @@ import { moonshot } from './moonshot.ts';
 import { mistral } from './mistral.ts';
 import { nvidia } from './nvidia.ts';
 import { perplexity } from './perplexity.ts';
+import { maxBridge } from './max-bridge.ts'; // brains-port: Claude Max CLI bridge
 
 const ALL: Recipe[] = [
   openai,
@@ -56,6 +57,7 @@ const ALL: Recipe[] = [
   mistral,
   nvidia,
   perplexity,
+  maxBridge, // brains-port: Claude Max CLI bridge
 ];
 
 /** Map from `provider:id` key to recipe. */
