@@ -21,7 +21,8 @@ gbrain import "$ING" --no-embed || log "  import failed"
 gbrain embed --stale || log "  embed failed"
 
 log "synthesize daily digest"
-DIGEST="$(gbrain think "Daily brief across my Discord, YouTube finance creators, and fintwit X feed from the last day: the key themes, tickers, catalysts, and anything that needs my attention. Be concise; group by theme; name sources." 2>/dev/null)"
+# Runs the fintwit-analyst skill's synthesis lens (skills/fintwit-analyst/SKILL.md).
+DIGEST="$(gbrain think "Across my fintwit X feed, finance YouTube creators, and Discord from the last day: group by theme; name every ticker with the source's direction (bullish/bearish/watch) + any level or catalyst; LEAD with what changed (new calls, reversals, conviction shifts); call out where sources conflict, both sides attributed; attribute every line to a source. Do NOT treat mention volume as a buy/sell signal. (skill: fintwit-analyst)" 2>/dev/null)"
 
 if [ -n "$DIGEST" ]; then
   log "post digest to Discord"

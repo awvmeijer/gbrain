@@ -1,0 +1,6 @@
+// Routing eval fixtures for skills/fintwit-analyst. Each intent includes a trigger substring.
+{"intent":"give me the fintwit digest","expected_skill":"fintwit-analyst"}
+{"intent":"what are my finance follows saying today","expected_skill":"fintwit-analyst"}
+{"intent":"daily market read from my feeds — tickers and catalysts","expected_skill":"fintwit-analyst"}
+{"intent":"finance feed digest from my youtube creators and fintwit X","expected_skill":"fintwit-analyst"}
+{"intent":"fintwit analyst: what changed and where do sources disagree","expected_skill":"fintwit-analyst"}

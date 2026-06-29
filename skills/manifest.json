@@ -353,6 +353,11 @@
       "name": "skill-autobench",
       "path": "skill-autobench/SKILL.md",
       "description": "Author an eval for an existing skill from its REAL usage history, not its spec. Mine invocations from the brain's conversation archive (conversations/) and per-harness session transcripts — a user correction after an…"
+    },
+    {
+      "name": "fintwit-analyst",
+      "path": "fintwit-analyst/SKILL.md",
+      "description": "Synthesize the X (fintwit), YouTube-creator, and Discord feeds into a daily actionable finance read — tickers, catalysts, what changed, source conflicts. Volume is never a signal."
     }
   ],
   "dependencies": {
