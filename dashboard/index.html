@@ -19,6 +19,14 @@
         document.documentElement.style.background = dark ? '#111213' : '#DBDCDD';
       } catch (e) {}
     </script>
+    <script>
+      // Belt-and-suspenders: if this page ever loads, kill any stale SW + caches
+      // from the retired PWA so the dashboard stays fresh.
+      if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistrations().then((rs) => rs.forEach((r) => r.unregister())).catch(() => {});
+      }
+      if (window.caches) { caches.keys().then((ks) => ks.forEach((k) => caches.delete(k))).catch(() => {}); }
+    </script>
   </head>
   <body>
     <div id="root"></div>

@@ -29,7 +29,7 @@ os.environ["PATH"] = "/opt/homebrew/bin:" + os.environ.get("PATH", "") + f":{Pat
 
 import keyring
 from fastapi import FastAPI, Header, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 SERVICE = "brain"
@@ -376,6 +376,26 @@ async def api_decide(request: Request, x_brain_key: str | None = Header(default=
         content = re.sub(r"^(---\n)", rf"\1status: {new_status}\n", content, count=1)
     _gbrain(["put", slug, "--content", content])
     return {"ok": True, "slug": slug, "status": new_status}
+
+
+# Self-destructing service worker: the retired PWA registered /sw.js (cache-first
+# shell) at this origin, so browsers still serve its cached old UI. The browser
+# re-fetches /sw.js from network on update checks; serving this unregisters the
+# old SW, purges all caches, and reloads open tabs → the real dashboard loads.
+_SW_KILL = """self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('activate', (e) => { e.waitUntil((async () => {
+  try { await self.registration.unregister(); } catch (x) {}
+  try { const ks = await caches.keys(); await Promise.all(ks.map(k => caches.delete(k))); } catch (x) {}
+  const cs = await self.clients.matchAll({ type: 'window' });
+  cs.forEach((c) => c.navigate(c.url));
+})()); });
+"""
+
+
+@app.get("/sw.js")
+def sw_kill():
+    return Response(_SW_KILL, media_type="application/javascript",
+                    headers={"Cache-Control": "no-store", "Service-Worker-Allowed": "/"})
 
 
 _PAGE = """<!doctype html><html lang=en><head>
