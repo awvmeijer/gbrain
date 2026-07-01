@@ -1,0 +1,518 @@
+/* BRAINS/ — production tokens (DESIGN.md v3, Palantir register).
+   Adapted from the design-handoff tokens.css; class names are part of the
+   design contract (Stadium, SplitTag, .ink, .dt, …) — keep them. */
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+.brains-root {
+  --azure: #3860be;
+  --azure-bright: #5c85dc;
+  --azure-wash: rgba(56, 96, 190, 0.14);
+  --mint: #2ee6a6;
+  --warn: #c87619;
+  --error: #cd4246;
+  --grad-hero: linear-gradient(135deg, #2d8fe3 0%, #fdefd6 100%);
+
+  /* kind hues — dusty categorical */
+  --k-person: #6e93b8;
+  --k-agent: #63a89a;
+  --k-company: #c2a064;
+  --k-ticker: #93b27c;
+  --k-repo: #b5786d;
+  --k-project: #b58ca0;
+  --k-topic: #8c99a8;
+  --k-decision: #c7b07f;
+
+  font-family: 'Geist', sans-serif;
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+  background: var(--page);
+  color: var(--t-body);
+  letter-spacing: 0;
+  box-sizing: border-box;
+}
+.brains-root *,
+.brains-root *::before,
+.brains-root *::after {
+  box-sizing: border-box;
+}
+
+.brains-root[data-th='night'],
+.brains-root .ink {
+  --page: #111213;
+  --pane: #1e2022;
+  --elev: #25282b;
+  --inset: #2e3236;
+  --hl: rgba(255, 255, 255, 0.08);
+  --hls: rgba(255, 255, 255, 0.16);
+  --t-display: #fdefd6;
+  --t-body: #e8e8e6;
+  --t-sec: #9a9c9e;
+  --t-mut: #6a6d70;
+  --row-hover: #25282b;
+}
+.brains-root[data-th='day'] {
+  --page: #dbdcdd;
+  --pane: #dbdcdd;
+  --elev: rgba(30, 33, 36, 0.05);
+  --inset: rgba(30, 33, 36, 0.08);
+  --hl: rgba(30, 33, 36, 0.16);
+  --hls: rgba(30, 33, 36, 0.3);
+  --t-display: #1e2124;
+  --t-body: #2a2d30;
+  --t-sec: #5c6064;
+  --t-mut: #8b8e91;
+  --row-hover: rgba(30, 33, 36, 0.06);
+}
+/* charcoal panels stay charcoal in day — paper around ink */
+.brains-root .ink {
+  background: var(--pane);
+  color: var(--t-body);
+}
+
+/* ---------- type ---------- */
+.brains-root .mono {
+  font-family: 'Geist Mono', monospace;
+  font-feature-settings: 'zero' 1;
+}
+.brains-root .code {
+  font-family: 'JetBrains Mono', monospace;
+}
+.brains-root .display {
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  color: var(--t-display);
+}
+.brains-root .brand {
+  font-family: 'Bricolage Grotesque', 'Geist', sans-serif;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+.brains-root .eyebrow {
+  font-family: 'Geist Mono', monospace;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--t-sec);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.brains-root .eyebrow .sq {
+  width: 5px;
+  height: 5px;
+  background: currentColor;
+  flex: none;
+}
+.brains-root .kpi {
+  font-family: 'Geist Mono', monospace;
+  font-feature-settings: 'zero' 1;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--t-display);
+}
+
+/* ---------- tags ---------- */
+.brains-root .tag {
+  font-family: 'Geist Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--t-sec);
+  border: 1px solid var(--hl);
+  border-radius: 4px;
+  padding: 2px 7px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+  line-height: 16px;
+}
+.brains-root .tag.solid {
+  background: var(--elev);
+  border-color: transparent;
+}
+.brains-root .tag.ok {
+  color: var(--t-sec);
+}
+.brains-root .tag.ok .dot {
+  background: var(--t-sec);
+}
+.brains-root .tag.live {
+  color: var(--mint);
+  border-color: rgba(46, 230, 166, 0.35);
+}
+.brains-root .tag.live .dot {
+  background: var(--mint);
+}
+.brains-root .tag.warn {
+  color: var(--warn);
+  border-color: rgba(200, 118, 25, 0.45);
+}
+.brains-root .tag.warn .dot {
+  background: var(--warn);
+}
+.brains-root .tag.err {
+  color: var(--error);
+  border-color: rgba(205, 66, 70, 0.45);
+}
+.brains-root .tag.err .dot {
+  background: var(--error);
+}
+.brains-root .tag .dot {
+  width: 5px;
+  height: 5px;
+  flex: none;
+}
+.brains-root .splittag {
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid var(--hl);
+  border-radius: 4px;
+  font-family: 'Geist Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  line-height: 16px;
+  white-space: nowrap;
+}
+.brains-root .splittag > span {
+  padding: 2px 7px;
+  display: inline-flex;
+  align-items: center;
+}
+.brains-root .splittag > span + span {
+  border-left: 1px solid var(--hl);
+  color: var(--t-sec);
+}
+
+/* ---------- stadium emphasis row ---------- */
+.brains-root .stadium {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  border: 1px solid var(--hls);
+  border-radius: 999px;
+  padding: 10px 20px;
+  font-size: 14px;
+  color: var(--t-body);
+}
+.brains-root .stadium .arr {
+  font-family: 'Geist Mono', monospace;
+  color: var(--t-sec);
+  flex: none;
+}
+.brains-root .stadium u,
+.brains-root .fig {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
+  font-family: 'Geist Mono', monospace;
+  font-feature-settings: 'zero' 1;
+  font-size: 0.95em;
+  color: var(--t-display);
+  font-style: normal;
+}
+
+/* ---------- buttons / links ---------- */
+.brains-root .btn {
+  font-family: 'Geist Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  border-radius: 4px;
+  padding: 7px 14px;
+  border: 1px solid transparent;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  line-height: 16px;
+  transition:
+    background 150ms ease-out,
+    border-color 150ms ease-out,
+    color 150ms ease-out;
+}
+.brains-root .btn.primary {
+  background: var(--azure);
+  color: #fdefd6;
+}
+.brains-root .btn.primary:hover {
+  background: var(--azure-bright);
+}
+.brains-root .btn.ghost {
+  background: transparent;
+  color: var(--t-body);
+  border-color: var(--hls);
+}
+.brains-root .btn.ghost:hover {
+  background: var(--elev);
+}
+.brains-root .btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.brains-root .ulink {
+  font-size: 12px;
+  color: var(--t-body);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
+  cursor: pointer;
+}
+.brains-root .ulink:hover {
+  color: var(--azure-bright);
+}
+
+/* ---------- data table ---------- */
+.brains-root .dt {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.brains-root .dt th {
+  font-family: 'Geist Mono', monospace;
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--t-mut);
+  text-align: left;
+  padding: 0 12px;
+  height: 30px;
+  border-bottom: 1px solid var(--hls);
+  background: var(--pane);
+  position: sticky;
+  top: 0;
+  white-space: nowrap;
+  z-index: 2;
+}
+.brains-root .dt td {
+  padding: 0 12px;
+  height: 30px;
+  border-bottom: 1px solid var(--hl);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.brains-root .dt tr.sel td {
+  background: var(--azure-wash);
+}
+.brains-root .dt tr.sel td:first-child {
+  box-shadow: inset 2px 0 0 var(--azure);
+}
+.brains-root .dt tbody tr:hover td {
+  background: var(--row-hover);
+}
+.brains-root .dt tbody tr.sel:hover td {
+  background: var(--azure-wash);
+}
+.brains-root .dt .num {
+  font-family: 'Geist Mono', monospace;
+  font-feature-settings: 'zero' 1;
+  text-align: right;
+  color: var(--t-sec);
+}
+.brains-root .dt tbody tr {
+  cursor: pointer;
+}
+
+/* ---------- facets ---------- */
+.brains-root .facet-group {
+  border-top: 1px dotted var(--hls);
+  padding: 12px 0 14px;
+}
+.brains-root .facet-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12.5px;
+  color: var(--t-body);
+  padding: 4px 8px;
+  margin: 0 -8px;
+  border-radius: 0;
+  cursor: pointer;
+}
+.brains-root .facet-row:hover {
+  background: var(--row-hover);
+}
+.brains-root .facet-row.on {
+  background: var(--azure-wash);
+  box-shadow: inset 2px 0 0 var(--azure);
+}
+.brains-root .facet-row .ct {
+  font-family: 'Geist Mono', monospace;
+  font-size: 11px;
+  color: var(--t-mut);
+  font-feature-settings: 'zero' 1;
+}
+.brains-root .rail-tight .facet-group {
+  padding: 9px 0 10px;
+}
+.brains-root .rail-tight .facet-row {
+  padding-top: 2.5px;
+  padding-bottom: 2.5px;
+}
+
+/* ---------- relation-row evidence callout (hover) ---------- */
+.brains-root .rel-row {
+  position: relative;
+}
+.brains-root .rel-row:hover {
+  background: var(--row-hover);
+}
+.brains-root .rel-ev {
+  display: none;
+  position: absolute;
+  left: 14px;
+  top: 100%;
+  z-index: 6;
+  padding-top: 8px;
+}
+.brains-root .rel-row:hover .rel-ev {
+  display: block;
+}
+.brains-root .rel-ev .elbow {
+  position: absolute;
+  left: 6px;
+  top: -2px;
+  width: 10px;
+  height: 12px;
+  border-left: 1px solid var(--hls);
+  border-bottom: 1px solid var(--hls);
+}
+.brains-root .rel-ev .card {
+  margin-left: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--hls);
+  border-radius: 4px;
+  padding: 6px 10px;
+  white-space: nowrap;
+}
+.brains-root .rel-ev.narrow {
+  left: auto;
+  right: 0;
+}
+.brains-root .rel-ev.narrow .elbow {
+  left: auto;
+  right: 6px;
+  border-left: none;
+  border-right: 1px solid var(--hls);
+}
+.brains-root .rel-ev.narrow .card {
+  margin-left: 0;
+  margin-right: 16px;
+  white-space: normal;
+  max-width: 280px;
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+
+/* ---------- mint halo ---------- */
+@keyframes brains-halo-rot {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+.brains-root .halo {
+  position: absolute;
+  border: 1.5px dashed var(--mint);
+  border-radius: 50%;
+  animation: brains-halo-rot 20s linear infinite;
+}
+
+/* ---------- live-agent pulse (graph LIVE AGENTS panel) ---------- */
+@keyframes brains-pulse {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: scale(0.85);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.25);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .brains-root .halo,
+  .brains-root .halo-rot {
+    animation: none !important;
+  }
+}
+
+/* ---------- view fade (160ms, per handoff interaction spec) ---------- */
+@keyframes brains-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.brains-root .view-fade {
+  animation: brains-fade 160ms ease-out;
+}
+
+/* ---------- inputs ---------- */
+.brains-root .field {
+  font-family: 'Geist Mono', monospace;
+  font-size: 12px;
+  color: var(--t-body);
+  border: 1px solid var(--hls);
+  border-radius: 4px;
+  padding: 7px 10px;
+  background: var(--page);
+  outline: none;
+}
+.brains-root .field:focus {
+  border-color: var(--azure);
+}
+.brains-root .field::placeholder {
+  color: var(--t-mut);
+}
+
+/* ---------- misc ---------- */
+.brains-root .hr {
+  border: none;
+  border-top: 1px solid var(--hl);
+  margin: 0;
+}
+.brains-root .footnote {
+  font-size: 11px;
+  color: var(--t-mut);
+}
+.brains-root .kv {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 16px;
+  font-family: 'Geist Mono', monospace;
+  font-size: 11.5px;
+}
+.brains-root .kv .k {
+  color: var(--t-mut);
+  text-transform: lowercase;
+}
+.brains-root .kv .v {
+  color: var(--t-body);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.brains-root ::-webkit-scrollbar {
+  display: none;
+}
+.brains-root {
+  scrollbar-width: none;
+}

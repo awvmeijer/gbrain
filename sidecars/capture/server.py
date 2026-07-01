@@ -30,6 +30,7 @@ os.environ["PATH"] = "/opt/homebrew/bin:" + os.environ.get("PATH", "") + f":{Pat
 import keyring
 from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 SERVICE = "brain"
 HOME = Path.home()
@@ -38,6 +39,7 @@ ING = HOME / "brains-ingest"
 CAP_DIR = ING / "capture"
 FILE_DIR = CAP_DIR / "files"
 LOG = GBRAIN_DIR / "logs" / "capture.log"
+DASHBOARD_DIST = GBRAIN_DIR / "dashboard" / "dist"
 DEDUP_FILE = GBRAIN_DIR / "logs" / "capture-dedup.json"  # outside brains-ingest, never imported
 DEDUP_WINDOW_S = int(os.environ.get("CAPTURE_DEDUP_WINDOW_S", "600"))  # 10 min
 MAX_BYTES = 40 * 1024 * 1024  # 40 MB per attachment
@@ -376,11 +378,6 @@ async def api_decide(request: Request, x_brain_key: str | None = Header(default=
     return {"ok": True, "slug": slug, "status": new_status}
 
 
-@app.get("/", response_class=HTMLResponse)
-def ui():
-    return _PAGE
-
-
 _PAGE = """<!doctype html><html lang=en><head>
 <meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name=apple-mobile-web-app-capable content=yes>
@@ -459,3 +456,13 @@ async function toggleRec(){
   }catch(e){msg('Mic blocked: '+e,'err')}
 }
 </script></body></html>"""
+
+
+# The built v3 dashboard is served at / (mounted LAST so /api, /capture, /health
+# win). Falls back to the inline capture page when the dashboard isn't built.
+if DASHBOARD_DIST.exists():
+    app.mount("/", StaticFiles(directory=str(DASHBOARD_DIST), html=True), name="dashboard")
+else:
+    @app.get("/", response_class=HTMLResponse)
+    def ui():
+        return _PAGE

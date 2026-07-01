@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="BRAINS" />
+    <title>BRAINS/</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700;800&family=Geist+Mono:wght@400;500&family=JetBrains+Mono&display=swap" rel="stylesheet" />
+    <script>
+      // Pre-paint theme (no flash): mirror theme.ts's data-th + background.
+      try {
+        var v = (localStorage.getItem('brain.theme') || 'auto').toLowerCase();
+        var dark = v === 'night' || (v === 'auto' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        var t = dark ? 'night' : 'day';
+        document.documentElement.dataset.th = t;
+        document.documentElement.style.background = dark ? '#111213' : '#DBDCDD';
+      } catch (e) {}
+    </script>
+    <script type="module" crossorigin src="/assets/index-BLLiqoGZ.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-X55-ulhK.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>
