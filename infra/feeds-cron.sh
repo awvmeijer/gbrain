@@ -35,6 +35,9 @@ DIGEST="$(gbrain think "Across my fintwit X feed, finance YouTube creators, Tele
 if [ -n "$DIGEST" ]; then
   log "post digest to Discord"
   printf '**🧠 BRAINS daily digest — %s**\n\n%s\n' "$(date '+%F')" "$DIGEST" | "$BV" "$GB/infra/post_discord.py"
+  # Persist as a page so the dashboard "Today" tab + search have it (imported next run).
+  DAY="$(date '+%F')"; DDIR="$ING/digests"; mkdir -p "$DDIR"
+  printf -- "---\ntitle: Daily digest — %s\nsource: digest\ndate: %s\ntags: [digest, finance]\n---\n\n# Daily digest — %s\n\n%s\n" "$DAY" "$DAY" "$DAY" "$DIGEST" > "$DDIR/$DAY.md"
 else
   log "no digest produced; skip post"
 fi

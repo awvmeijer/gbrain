@@ -223,6 +223,159 @@ async def capture(request: Request, x_brain_key: str | None = Header(default=Non
                          "file": file_rel, "text": full})
 
 
+# ---- Dashboard data adapter (parses gbrain CLI; reuses X-Brain-Key auth) ----
+
+def _gbrain(args: list[str], timeout: int = 60) -> str:
+    try:
+        r = subprocess.run(["gbrain", *args], cwd=str(GBRAIN_DIR),
+                           capture_output=True, text=True, timeout=timeout)
+        return r.stdout
+    except Exception as e:
+        _log(f"gbrain {args[:2]} failed: {e}")
+        return ""
+
+
+def _parse_list(out: str) -> list[dict]:
+    rows = []
+    for line in out.splitlines():
+        if "\t" not in line and "/" not in line:
+            continue
+        parts = line.split("\t")
+        if "/" not in parts[0]:
+            continue
+        rows.append({
+            "slug": parts[0].strip(),
+            "type": parts[1].strip() if len(parts) > 1 else "",
+            "date": parts[2].strip() if len(parts) > 2 else "",
+            "title": parts[3].strip() if len(parts) > 3 else parts[0].strip(),
+        })
+    return rows
+
+
+_SEARCH_RE = re.compile(r"^\[([\d.]+)\]\s+(\S+)\s+--\s+(.*)$")
+
+
+def _parse_search(out: str) -> list[dict]:
+    return [{"score": float(m.group(1)), "slug": m.group(2), "snippet": m.group(3).strip()}
+            for m in (_SEARCH_RE.match(l) for l in out.splitlines()) if m]
+
+
+def _svc(url: str) -> bool:
+    try:
+        import httpx
+        return httpx.get(url, timeout=2).status_code == 200
+    except Exception:
+        return False
+
+
+FEED_MAX_AGE_H = {"discord": 30, "x": 30, "youtube": 48, "telegram": 30, "digests": 30}
+
+
+def _newest_age_h(subdir: str) -> float | None:
+    d = ING / subdir
+    files = list(d.rglob("*.md")) if d.exists() else []
+    if not files:
+        return None
+    return (time.time() - max(f.stat().st_mtime for f in files)) / 3600.0
+
+
+def _field(content: str, key: str) -> str:
+    m = re.search(rf"^{re.escape(key)}:\s*(.+)$", content, re.MULTILINE)
+    return m.group(1).strip() if m else ""
+
+
+@app.get("/api/health")
+def api_health(x_brain_key: str | None = Header(default=None)):
+    _require(x_brain_key)
+    services = {
+        "ollama": _svc("http://127.0.0.1:11434/api/tags"),
+        "bridge": _svc("http://127.0.0.1:8789/v1/models"),  # fast liveness; /health does a slow Claude ping
+        "reranker": _svc("http://127.0.0.1:8081/health"),
+    }
+    feeds, stale = [], False
+    for src, maxh in FEED_MAX_AGE_H.items():
+        age = _newest_age_h(src)
+        is_stale = age is not None and age > maxh
+        stale = stale or is_stale
+        feeds.append({"source": src, "age_hours": round(age, 1) if age is not None else None,
+                      "stale": is_stale})
+    down = not all(services.values())
+    return {"verdict": "down" if down else ("warn" if stale else "ok"),
+            "services": services, "feeds": feeds}
+
+
+@app.get("/api/pages")
+def api_pages(source: str | None = None, type: str | None = None, tag: str | None = None,
+              n: int = 30, x_brain_key: str | None = Header(default=None)):
+    _require(x_brain_key)
+    args = ["list", "--limit", str(n)]
+    if type:
+        args += ["--type", type]
+    if tag:
+        args += ["--tag", tag]
+    rows = _parse_list(_gbrain(args))
+    if source:
+        rows = [r for r in rows if r["slug"].startswith(f"{source}/")]
+    return {"pages": rows}
+
+
+@app.get("/api/page")
+def api_page(slug: str, x_brain_key: str | None = Header(default=None)):
+    _require(x_brain_key)
+    return {"slug": slug, "content": _gbrain(["get", slug])}
+
+
+@app.get("/api/search")
+def api_search(q: str, n: int = 20, x_brain_key: str | None = Header(default=None)):
+    _require(x_brain_key)
+    return {"hits": _parse_search(_gbrain(["search", q, "--limit", str(n)]))}
+
+
+@app.get("/api/today")
+def api_today(x_brain_key: str | None = Header(default=None)):
+    _require(x_brain_key)
+    d = ING / "digests"
+    files = sorted(d.glob("*.md")) if d.exists() else []
+    if not files:
+        return {"date": None, "content": ""}
+    latest = files[-1]
+    return {"date": latest.stem, "content": latest.read_text()}
+
+
+@app.get("/api/needs")
+def api_needs(x_brain_key: str | None = Header(default=None)):
+    _require(x_brain_key)
+    out = []
+    for p in _parse_list(_gbrain(["list", "--type", "proposal", "--limit", "50"])):
+        content = _gbrain(["get", p["slug"]])
+        status = _field(content, "status") or "pending"
+        if status.lower() != "pending":
+            continue
+        out.append({"slug": p["slug"], "title": p["title"], "status": status,
+                    "action": _field(content, "action"), "target": _field(content, "target"),
+                    "rationale": _field(content, "rationale"), "rollback": _field(content, "rollback")})
+    return {"proposals": out}
+
+
+@app.post("/api/decide")
+async def api_decide(request: Request, x_brain_key: str | None = Header(default=None)):
+    _require(x_brain_key)
+    data = await request.json()
+    slug, decision = data.get("slug"), data.get("decision")
+    if not slug or decision not in ("approve", "reject"):
+        raise HTTPException(400, "need slug + decision in {approve,reject}")
+    content = _gbrain(["get", slug])
+    if not content.strip():
+        raise HTTPException(404, "proposal not found")
+    new_status = "approved" if decision == "approve" else "rejected"
+    if re.search(r"^status:\s*.+$", content, re.MULTILINE):
+        content = re.sub(r"^status:\s*.+$", f"status: {new_status}", content, count=1, flags=re.MULTILINE)
+    else:
+        content = re.sub(r"^(---\n)", rf"\1status: {new_status}\n", content, count=1)
+    _gbrain(["put", slug, "--content", content])
+    return {"ok": True, "slug": slug, "status": new_status}
+
+
 @app.get("/", response_class=HTMLResponse)
 def ui():
     return _PAGE
