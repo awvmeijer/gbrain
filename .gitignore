@@ -57,3 +57,4 @@ graphify-out/
 logs/
 recipes/**/.venv/
 sidecars/.venv/
+data/models/

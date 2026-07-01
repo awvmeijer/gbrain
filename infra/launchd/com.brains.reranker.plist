@@ -8,7 +8,7 @@
   <array>
     <string>/opt/homebrew/bin/llama-server</string>
     <string>-m</string>
-    <string>/Users/awvmeijer/brain/data/models/bge-reranker-v2-m3-Q8_0.gguf</string>
+    <string>/Users/awvmeijer/gbrain/data/models/bge-reranker-v2-m3-Q8_0.gguf</string>
     <string>--reranking</string>
     <string>--port</string>
     <string>8081</string>
