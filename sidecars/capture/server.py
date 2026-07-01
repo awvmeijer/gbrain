@@ -15,9 +15,12 @@ captures, so a leaked key's blast radius is spam.
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import os
 import re
 import subprocess
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -35,6 +38,8 @@ ING = HOME / "brains-ingest"
 CAP_DIR = ING / "capture"
 FILE_DIR = CAP_DIR / "files"
 LOG = GBRAIN_DIR / "logs" / "capture.log"
+DEDUP_FILE = GBRAIN_DIR / "logs" / "capture-dedup.json"  # outside brains-ingest, never imported
+DEDUP_WINDOW_S = int(os.environ.get("CAPTURE_DEDUP_WINDOW_S", "600"))  # 10 min
 MAX_BYTES = 40 * 1024 * 1024  # 40 MB per attachment
 WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "mlx-community/whisper-small-mlx")
 
@@ -61,6 +66,37 @@ def _slug(s: str, n: int = 48) -> str:
     return (s[:n].strip("-")) or "capture"
 
 
+def _log(msg: str) -> None:
+    LOG.parent.mkdir(parents=True, exist_ok=True)
+    with open(LOG, "a") as f:
+        f.write(f"[{datetime.now().isoformat(timespec='seconds')}] {msg}\n")
+
+
+def _dedup_load() -> dict:
+    try:
+        return json.loads(DEDUP_FILE.read_text()) if DEDUP_FILE.exists() else {}
+    except Exception:
+        return {}
+
+
+def _dedup_seen(key: str) -> str | None:
+    """Page name if this exact content (image bytes / text) was captured within the window."""
+    now = time.time()
+    hit = _dedup_load().get(key)
+    return hit[1] if (hit and now - hit[0] < DEDUP_WINDOW_S) else None
+
+
+def _dedup_record(key: str, page_name: str) -> None:
+    try:
+        now = time.time()
+        data = {k: v for k, v in _dedup_load().items() if now - v[0] < DEDUP_WINDOW_S}  # prune
+        data[key] = [now, page_name]
+        DEDUP_FILE.parent.mkdir(parents=True, exist_ok=True)
+        DEDUP_FILE.write_text(json.dumps(data))
+    except Exception as e:
+        _log(f"dedup record failed: {e}")
+
+
 def _ocr(path: Path) -> str:
     """Apple Vision OCR (local, on-device via the OS framework)."""
     try:
@@ -81,12 +117,6 @@ def _transcribe(path: Path) -> str:
     except Exception as e:
         _log(f"transcribe failed for {path.name}: {e}")
         return ""
-
-
-def _log(msg: str) -> None:
-    LOG.parent.mkdir(parents=True, exist_ok=True)
-    with open(LOG, "a") as f:
-        f.write(f"[{datetime.now().isoformat(timespec='seconds')}] {msg}\n")
 
 
 def _write_page(text: str, via: str, file_rel: str | None) -> Path:
@@ -137,11 +167,16 @@ async def capture(request: Request, x_brain_key: str | None = Header(default=Non
     via = "phone"
     file_rel = None
     derived = ""
+    key = None
+    raw = None
+    up = None
 
     if ctype.startswith("application/json"):
         data = await request.json()
         text = (data.get("text") or "").strip()
         via = (data.get("source") or via).strip() or via
+        if text:
+            key = hashlib.sha256(text.encode()).hexdigest()
     else:  # multipart: text field + optional file
         form = await request.form()
         text = (str(form.get("text") or "")).strip()
@@ -151,22 +186,38 @@ async def capture(request: Request, x_brain_key: str | None = Header(default=Non
             raw = await up.read()
             if len(raw) > MAX_BYTES:
                 raise HTTPException(413, "attachment too large (max 40 MB)")
-            FILE_DIR.mkdir(parents=True, exist_ok=True)
-            ts = datetime.now().strftime("%Y%m%dT%H%M%S")
-            ext = Path(up.filename).suffix.lower()[:6] or ".bin"
-            dst = FILE_DIR / f"{ts}-{_slug(Path(up.filename).stem)}{ext}"
-            dst.write_bytes(raw)
-            file_rel = str(dst.relative_to(ING))
-            if ext in IMAGE_EXTS:
-                derived = _ocr(dst)
-            elif ext in AUDIO_EXTS:
-                derived = _transcribe(dst)
+            key = hashlib.sha256(raw).hexdigest()  # file identity is the dedup key
+        elif text:
+            key = hashlib.sha256(text.encode()).hexdigest()
+
+    # Content-hash dedup: same image bytes / same text within the window → no-op
+    # (also avoids re-running OCR / Whisper on an accidental re-send).
+    if key:
+        dup = _dedup_seen(key)
+        if dup:
+            return JSONResponse({"ok": True, "duplicate": True, "page": dup, "via": via,
+                                 "text": "(duplicate of a recent capture — skipped)"})
+
+    # Not a duplicate → persist the file + derive text.
+    if raw is not None and up is not None:
+        FILE_DIR.mkdir(parents=True, exist_ok=True)
+        ts = datetime.now().strftime("%Y%m%dT%H%M%S")
+        ext = Path(up.filename).suffix.lower()[:6] or ".bin"
+        dst = FILE_DIR / f"{ts}-{_slug(Path(up.filename).stem)}{ext}"
+        dst.write_bytes(raw)
+        file_rel = str(dst.relative_to(ING))
+        if ext in IMAGE_EXTS:
+            derived = _ocr(dst)
+        elif ext in AUDIO_EXTS:
+            derived = _transcribe(dst)
 
     full = "\n\n".join(p for p in (text, derived) if p).strip()
     if not full and not file_rel:
         raise HTTPException(400, "nothing to capture (empty text and no file)")
 
     page = _write_page(full, via, file_rel)
+    if key:
+        _dedup_record(key, page.name)
     _ingest_async()
     return JSONResponse({"ok": True, "page": page.name, "via": via,
                          "file": file_rel, "text": full})
@@ -231,8 +282,9 @@ async function post(body,isForm){
     const r=await fetch('/capture',{method:'POST',headers:h,body:isForm?body:JSON.stringify(body)});
     const j=await r.json();
     if(!r.ok){msg('Error: '+(j.detail||r.status),'err');return}
-    msg('Captured ✓ ('+j.via+')\\n'+(j.text||'').slice(0,280),'ok');
-    if(!isForm)T.value='';
+    const tag=j.duplicate?'Duplicate — skipped':'Captured ✓ ('+j.via+')';
+    msg(tag+'\\n'+(j.text||'').slice(0,280),'ok');
+    if(!isForm&&!j.duplicate)T.value='';
   }catch(e){msg('Network error: '+e,'err')}
 }
 function sendText(){const v=T.value.trim();if(!v){msg('Nothing to send.','err');return}post({text:v,source:'web'})}
