@@ -13,6 +13,7 @@
 # The 30s in the filename sets the refresh interval.
 
 URL="http://127.0.0.1:8787"
+CTL="$HOME/gbrain/infra/brains-ctl.sh"
 VPY="$HOME/gbrain/sidecars/.venv/bin/python"
 KEY=$("$VPY" -m keyring get brain CAPTURE_KEY 2>/dev/null)
 H=$(curl -s --max-time 6 -H "X-Brain-Key: $KEY" "$URL/api/health" 2>/dev/null)
@@ -52,4 +53,6 @@ for f in json.load(sys.stdin).get("feeds",[]):
     print(m+" "+f["source"]+": "+age)' 2>/dev/null
 echo "---"
 echo "Open dashboard | href=$URL/"
+echo "Pause (free RAM) | bash=\"$CTL\" param1=pause terminal=false refresh=true"
+echo "Resume | bash=\"$CTL\" param1=resume terminal=false refresh=true"
 echo "Refresh | refresh=true"
