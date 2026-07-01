@@ -19,6 +19,11 @@
     </array>
     <key>WorkingDirectory</key>
     <string>/Users/awvmeijer/gbrain/sidecars/capture</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/Users/awvmeijer/.bun/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
