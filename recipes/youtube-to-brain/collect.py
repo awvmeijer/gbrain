@@ -21,9 +21,74 @@ import argparse
 import json
 import re
 import sys
+from datetime import date
 from pathlib import Path
 
 import httpx
+
+# --- content-staleness guard ------------------------------------------------
+# YouTube's publish date is authoritative for *when the video entered YouTube*,
+# but re-premiered / recycled livestreams carry a current publish date over
+# year-old content (e.g. a June-2025 stream re-run on 2026-06-29). A pure
+# publish-date collector can't see this. Cheap, deterministic tell: the
+# transcript asserts weekday↔calendar-date pairings ("Thursday July 3") that
+# are only valid a year earlier than the publish year. No LLM, no false
+# drop — we only *flag* (never lose content), so window-synthesis can skip it.
+_WD_RE = r"(monday|tuesday|wednesday|thursday|friday|saturday|sunday)"
+_MO_RE = (
+    r"(january|february|march|april|may|june|july|august|september|october"
+    r"|november|december)"
+)
+_WD = {n: i for i, n in enumerate(
+    ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"])}
+_MO = {n: i for i, n in enumerate(
+    ["january", "february", "march", "april", "may", "june", "july", "august",
+     "september", "october", "november", "december"], start=1)}
+
+
+def suspect_content_year(text: str, published: str) -> int | None:
+    """Advisory: return the year the content likely belongs to when the
+    transcript/digest asserts weekday↔date pairings ("Thursday July 3") that
+    fit publish_year-1, else None.
+
+    Deliberately conservative to avoid tarring genuine current videos that
+    carry a single loose holiday reference (e.g. a real 2026-06-30 upload
+    saying "Friday July 4" when 2026's 4th is a Saturday): we flag ONLY when
+    >=2 *distinct* dates all resolve to publish_year-1 AND none resolve to the
+    publish year itself. Never overwrites the (authoritative) YouTube date and
+    never drops the page — it's a hint for window-synthesis / human review."""
+    try:
+        pub_year = int(published[:4])
+    except (ValueError, TypeError):
+        return None
+    if pub_year < 2000:
+        return None
+    t = text.lower()
+    # distinct (month, day) sets that resolve to each candidate year — a given
+    # (weekday, month, day) fits at most one year in a 3-year window.
+    hits = {pub_year - 1: set(), pub_year: set(), pub_year + 1: set()}
+
+    def tally(wd: str, mo: str, day: int) -> None:
+        wdi, moi = _WD.get(wd), _MO.get(mo)
+        if wdi is None or moi is None:
+            return
+        for y in hits:
+            try:
+                if date(y, moi, day).weekday() == wdi:
+                    hits[y].add((moi, day))
+            except ValueError:  # e.g. Feb 30
+                pass
+
+    # "Thursday (July 3)" / "Thursday, July 3rd"
+    for m in re.finditer(rf"{_WD_RE}[^a-z0-9]{{0,15}}{_MO_RE}\.?\s+(\d{{1,2}})", t):
+        tally(m.group(1), m.group(2), int(m.group(3)))
+    # "July 3rd ... Thursday"
+    for m in re.finditer(rf"{_MO_RE}\.?\s+(\d{{1,2}})[a-z]{{0,3}}[^a-z0-9]{{0,15}}{_WD_RE}", t):
+        tally(m.group(3), m.group(1), int(m.group(2)))
+
+    if len(hits[pub_year - 1]) >= 2 and not hits[pub_year]:
+        return pub_year - 1
+    return None
 
 UA = {
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -165,6 +230,18 @@ def main() -> None:
                 safe_title = title.replace('"', "'")
                 digest = _summarize(txt, args.bridge) if args.summarize else None
                 section = f"## Digest\n\n{digest}\n\n## Transcript\n\n" if digest else ""
+                # Recycled/re-premiered stream check (scan digest+transcript,
+                # where date anchors are densest). Advisory only.
+                stale_year = suspect_content_year((digest or "") + "\n" + txt, v["published"])
+                stale_fm = (
+                    f"stale_content: true\ncontent_date_review: {stale_year}\n" if stale_year else ""
+                )
+                stale_note = (
+                    f"> ⚠️ **Content-date review:** internal weekday/date references fit "
+                    f"**{stale_year}**, not the {v['published'][:4]} publish date — likely a "
+                    f"re-premiered/recycled stream. Treat calls as out-of-window.\n\n"
+                    if stale_year else ""
+                )
                 body = (
                     f"---\n"
                     f"title: {safe_title}\n"
@@ -175,11 +252,12 @@ def main() -> None:
                     f"url: https://youtu.be/{v['id']}\n"
                     f"date: {v['published']}\n"
                     f"has_digest: {'true' if digest else 'false'}\n"
+                    f"{stale_fm}"
                     f"tags: [youtube, finance, {_slug(handle)}]\n"
                     f"---\n\n"
                     f"# {safe_title}\n\n"
                     f"_{handle} · {v['published']} · https://youtu.be/{v['id']}_\n\n"
-                    f"{section}{txt}\n"
+                    f"{stale_note}{section}{txt}\n"
                 )
                 p = out_root / "youtube" / _slug(handle) / f"{v['id']}.md"
                 p.parent.mkdir(parents=True, exist_ok=True)

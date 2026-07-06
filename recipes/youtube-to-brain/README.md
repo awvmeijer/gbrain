@@ -34,7 +34,7 @@ V=recipes/youtube-to-brain/.venv
 python3 -m venv "$V" && "$V/bin/pip" install youtube-transcript-api httpx   # once
 "$V/bin/python" recipes/youtube-to-brain/collect.py ~/brains-ingest --limit 1
 gbrain import ~/brains-ingest --no-embed && gbrain embed --stale
-gbrain think "Digest my finance YouTube creators' latest videos: themes, tickers, calls."
+gbrain think "Digest my finance YouTube creators' latest videos: themes, tickers, calls. Exclude any page with 'stale_content: true' from current calls (it's recycled/re-premiered content — its year is 'content_date_review'); mention it only as dated context if relevant."
 ```
 
 Edit `channels.txt` to add/remove creators. Schedule the collect+embed as a
@@ -49,4 +49,15 @@ Minion cron (Phase 3) for a hands-off daily digest.
   cost is a handful of calls.
 - **Channel resolution** falls back to `/videos` + `/about` + a `browseId`
   pattern (fixes `@ARKInvest2015`).
+- **Recycled-stream guard** (`suspect_content_year`): YouTube's publish date is
+  authoritative for *when a video entered YouTube*, but re-premiered livestreams
+  carry a current date over year-old content (e.g. a June-2025 stream re-run on
+  2026-06-29). When the digest/transcript asserts ≥2 distinct weekday↔date
+  pairings ("Thursday July 3", "Friday July 4") that all resolve to
+  `publish_year − 1` and none to the publish year, the page is stamped
+  `stale_content: true` + `content_date_review: <year>` and a body warning — the
+  YouTube date is never overwritten and the page is never dropped. The ≥2-pairing
+  bar avoids tarring genuine current videos that carry one loose holiday
+  reference. Backfill existing pages by re-running `collect.py` (unseen only) or
+  the one-shot scan in `git log` for 2026-07-06.
 - Transcripts capped at `--max-chars` (default 40k).
