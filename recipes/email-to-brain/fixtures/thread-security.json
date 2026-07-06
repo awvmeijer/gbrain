@@ -1,0 +1,12 @@
+{
+  "thread_id": "fx3security003",
+  "snippet": "A new sign-in on macOS was detected on your account.",
+  "subject": "Security alert: new sign-in on macOS",
+  "sender": "Google <security-alert@accounts.google.example.com>",
+  "to": "awvmeijer@gmail.com",
+  "date_header": "Mon, 6 Jul 2026 07:44:02 +0800",
+  "label_ids": ["UNREAD", "INBOX"],
+  "message_count": 1,
+  "last_internal_date_ms": 1783727042000,
+  "body_text": "A new sign-in on macOS was detected on your account. If this was you, no action is needed. If not, review your account activity."
+}

@@ -1,0 +1,12 @@
+{
+  "thread_id": "fx2question002",
+  "snippet": "Are you free Thursday afternoon to go over the draft?",
+  "subject": "Draft review this week",
+  "sender": "Jane Colleague <jane@university.example.edu>",
+  "to": "awvmeijer@gmail.com",
+  "date_header": "Mon, 6 Jul 2026 09:15:40 +0800",
+  "label_ids": ["UNREAD", "INBOX"],
+  "message_count": 2,
+  "last_internal_date_ms": 1783732540000,
+  "body_text": "Hi Anthony, I finished the edits on section 3. Are you free Thursday afternoon to go over the draft? Happy to do Friday morning instead if that works better."
+}

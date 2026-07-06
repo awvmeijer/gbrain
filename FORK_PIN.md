@@ -23,6 +23,15 @@ to a commit SHA** and rebase onto a vetted SHA on a schedule — never track
   `src/core/minions/handlers/index.ts`, the dream-phase list) so monthly rebases
   auto-merge.
 
+## Posture (decided 2026-07-05 — headless convergence)
+- **UI is frozen.** The v3 React dashboard (`dashboard/`) keeps serving its
+  built assets off the capture sidecar, but no new UI work. New capability
+  lands ONLY as skills/recipes/sidecars (thin harness, thick skills).
+- **Shrink the core delta at every rebase** — anything that can move out of
+  `src/` into a recipe/sidecar should.
+- Decision record + migration plan:
+  `docs/decisions/2026-07-05-headless-convergence.md`.
+
 ## Rebase policy
 Monthly (or for a security fix): `git fetch upstream` → trial-branch
 `git rebase upstream/master` onto a new vetted SHA → **regression gate** (E2E

@@ -1,0 +1,11 @@
+# slug | path | remote
+# Ported from the archived ~/brain config.toml [ingest.git.repos] (+ gbrain).
+# remote "-" = no origin remote → the canonical in page frontmatter is the abs path.
+# ~/brain is archived (history closed, already in the corpus as legacy pages) —
+# kept here so any stray final commit still lands; expect no new ones.
+brain | /Users/awvmeijer/brain | https://github.com/awvmeijer/brain
+3dreams-dashboard | /Users/awvmeijer/Documents/Claude Code/3DREAMS-LiDAR-Dashboard-Full-Stack | https://github.com/awvmeijer/3DREAMS-LiDAR-Dashboard-Full-Stack
+lidar-pipeline | /Users/awvmeijer/Documents/Claude Code/3dreams-sg-lidar-pipeline-main | -
+finbrain | /Users/awvmeijer/Documents/Claude Code/Finbrain | https://github.com/awvmeijer/finbrain
+forge | /Users/awvmeijer/Documents/Claude Code/forge | https://github.com/awvmeijer/forge
+gbrain | /Users/awvmeijer/gbrain | https://github.com/awvmeijer/gbrain

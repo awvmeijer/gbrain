@@ -1,0 +1,12 @@
+{
+  "thread_id": "fx1newsletter001",
+  "snippet": "This week in AI infra: capex keeps climbing…",
+  "subject": "The Compute Weekly — Issue #87",
+  "sender": "The Compute Weekly <newsletter@computeweekly.example.com>",
+  "to": "awvmeijer@gmail.com",
+  "date_header": "Mon, 6 Jul 2026 08:02:11 +0800",
+  "label_ids": ["UNREAD", "INBOX"],
+  "message_count": 1,
+  "last_internal_date_ms": 1783728131000,
+  "body_text": "This week in AI infra: capex keeps climbing. Top stories: hyperscaler orders, neocloud margins, and a new inference benchmark. Unsubscribe at any time."
+}

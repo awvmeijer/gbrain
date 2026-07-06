@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.brains.email-triage</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/awvmeijer/gbrain/recipes/email-to-brain/run.sh</string>
+  </array>
+  <!-- 4x/day during waking hours; the old com.brain.triage ran 08:15/12:15/16:15,
+       plus an evening pass. NOT loaded by default — load only after the user
+       re-auths Gmail (triage.py --auth) and the recipe venv exists. -->
+  <key>StartCalendarInterval</key>
+  <array>
+    <dict><key>Hour</key><integer>8</integer><key>Minute</key><integer>15</integer></dict>
+    <dict><key>Hour</key><integer>12</integer><key>Minute</key><integer>15</integer></dict>
+    <dict><key>Hour</key><integer>16</integer><key>Minute</key><integer>15</integer></dict>
+    <dict><key>Hour</key><integer>20</integer><key>Minute</key><integer>15</integer></dict>
+  </array>
+  <key>RunAtLoad</key>
+  <false/>
+  <key>StandardOutPath</key>
+  <string>/Users/awvmeijer/gbrain/logs/email-triage.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/awvmeijer/gbrain/logs/email-triage.log</string>
+</dict>
+</plist>
