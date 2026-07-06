@@ -41,6 +41,15 @@ class ClaudeResult:
     session_id: str | None
 
 
+# A logged-out CLI emits this as assistant TEXT (exit 0), not only as an
+# error-flagged result — so text presence alone can never prove success.
+_AUTH_SENTINEL = "Not logged in"
+
+
+def _auth_failed(text: str) -> bool:
+    return text.strip().startswith(_AUTH_SENTINEL)
+
+
 async def _collect(
     prompt: str,
     *,
@@ -73,14 +82,18 @@ async def _collect(
             elif name in ("ResultMessage", "Result"):
                 session_id = getattr(msg, "session_id", None) or session_id
     except Exception:
-        # The CLI reports API-side failures (401 logged-out CLI, 429/529
-        # overload) as an error-flagged result AFTER any assistant text has
-        # streamed ("Claude Code returned an error result: success"). If text
-        # already arrived, the turn is usable — don't discard it.
-        if not text_parts:
+        # The CLI reports API-side failures (429/529 overload) as an
+        # error-flagged result AFTER any assistant text has streamed ("Claude
+        # Code returned an error result: success"). If real text already
+        # arrived, the turn is usable — don't discard it.
+        if not text_parts or _auth_failed("".join(text_parts)):
             raise
 
-    return ClaudeResult(text="".join(text_parts).strip(), session_id=session_id)
+    text = "".join(text_parts).strip()
+    if _auth_failed(text):
+        # Never hand the logged-out notice to callers as a "completion".
+        raise RuntimeError("claude CLI not logged in — run `claude` then /login")
+    return ClaudeResult(text=text, session_id=session_id)
 
 
 def complete(
@@ -145,6 +158,8 @@ def ping(model: str, *, timeout_s: float = 60.0) -> dict[str, Any]:
             return res.text
 
         text = asyncio.run(_probe())
+        if _auth_failed(text):
+            return {"ok": False, "error": "claude CLI not logged in — run `claude` then /login"}
         return {"ok": bool(text), "error": None}
     except TimeoutError:
         # Slow/loaded, not broken — unknown, never alertable.
