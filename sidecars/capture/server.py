@@ -20,7 +20,9 @@ import json
 import os
 import re
 import subprocess
+import threading
 import time
+import urllib.request
 from datetime import datetime
 from pathlib import Path
 
@@ -29,7 +31,7 @@ os.environ["PATH"] = "/opt/homebrew/bin:" + os.environ.get("PATH", "") + f":{Pat
 
 import keyring
 from fastapi import FastAPI, Header, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 SERVICE = "brain"
@@ -51,8 +53,41 @@ AUDIO_EXTS = {".m4a", ".mp4", ".webm", ".wav", ".mp3", ".ogg", ".aac", ".caf", "
 app = FastAPI(title="brains-capture")
 
 
+KEY_FILE = HOME / ".gbrain" / "client.key"
+_KEY_CACHE: str | None = None
+
+
 def _key() -> str | None:
-    return keyring.get_password(SERVICE, "CAPTURE_KEY")
+    # Resolve once, cheapest-first (env → key file → Keychain), then cache for
+    # the process lifetime. A per-request Keychain read pops the macOS unlock
+    # dialog whenever the login keychain is locked (post-sleep) — the Keychain
+    # stays canonical, but only the first resolution may touch it.
+    global _KEY_CACHE
+    if _KEY_CACHE:
+        return _KEY_CACHE
+    key = os.environ.get("CAPTURE_KEY") or None
+    if not key:
+        try:
+            key = KEY_FILE.read_text().strip() or None
+        except Exception:
+            key = None
+    if not key:
+        try:
+            key = keyring.get_password(SERVICE, "CAPTURE_KEY")
+        except Exception:
+            key = None
+        if key:
+            # Self-provision the client key file so menubar/hooks never need
+            # the Keychain (0600; capture-key blast radius is spam, see above).
+            try:
+                KEY_FILE.parent.mkdir(parents=True, exist_ok=True)
+                fd = os.open(KEY_FILE, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+                with os.fdopen(fd, "w") as f:
+                    f.write(key)
+            except Exception as e:
+                _log(f"client.key provision failed: {e}")
+    _KEY_CACHE = key
+    return key
 
 
 def _require(x_brain_key: str | None) -> None:
@@ -72,6 +107,70 @@ def _log(msg: str) -> None:
     LOG.parent.mkdir(parents=True, exist_ok=True)
     with open(LOG, "a") as f:
         f.write(f"[{datetime.now().isoformat(timespec='seconds')}] {msg}\n")
+
+
+# Secrets that clients/crons and this server's own request paths may need.
+# Same trap as CAPTURE_KEY everywhere: interactive/per-request Keychain reads
+# pop the unlock dialog or die -25320/-60008 when the login keychain is locked.
+_SECRET_FILES = {
+    "DISCORD_BOT_TOKEN": HOME / ".gbrain" / "discord_bot.token",
+    "DISCORD_WEBHOOK_URL": HOME / ".gbrain" / "discord_webhook.url",
+    "TRADINGVIEW_TOKEN": HOME / ".gbrain" / "tradingview.token",
+}
+_SECRET_CACHE: dict[str, str] = {}
+DISCORD_TOKEN_FILE = _SECRET_FILES["DISCORD_BOT_TOKEN"]
+
+
+def _secret(name: str) -> str | None:
+    """Resolve a secret memory → env → 0600 file → Keychain (then cache).
+    Request paths must call THIS, never keyring directly. A Keychain failure
+    propagates (callers decide fail-open vs fail-closed); the file tier makes
+    that effectively unreachable after first startup provisioning."""
+    if name in _SECRET_CACHE:
+        return _SECRET_CACHE[name]
+    val = os.environ.get(name) or None
+    dest = _SECRET_FILES.get(name)
+    if not val and dest:
+        try:
+            val = dest.read_text().strip() or None
+        except Exception:
+            val = None
+    if not val:
+        val = keyring.get_password(SERVICE, name)  # may raise — see docstring
+        if val and dest:
+            _write_secret_file(dest, val)
+    if val:
+        _SECRET_CACHE[name] = val
+    return val
+
+
+def _write_secret_file(dest: Path, val: str) -> None:
+    try:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(dest, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        with os.fdopen(fd, "w") as f:
+            f.write(val)
+    except Exception as e:  # noqa: BLE001
+        _log(f"{dest.name} provision failed: {e}")
+
+
+def _provision_secret_files() -> None:
+    """Keychain → 0600 files, once at startup — same idiom as _key()'s client.key
+    self-provisioning. The sidecar starts at login while the keychain is unlocked;
+    short-lived launchd crons (feeds at 06:30) read only the files, so they never
+    hit the post-sleep locked-keychain -25320. Keychain stays canonical."""
+    for secret, dest in _SECRET_FILES.items():
+        try:
+            val = keyring.get_password(SERVICE, secret)
+        except Exception:  # noqa: BLE001 — keychain locked; keep any existing file
+            return
+        if val:
+            _write_secret_file(dest, val)
+
+
+# Off the main thread: a keychain read under launchd can BLOCK on securityd
+# (not just raise -25320/-60008), which would stop uvicorn from ever binding.
+threading.Thread(target=_provision_secret_files, daemon=True).start()
 
 
 def _dedup_load() -> dict:
@@ -154,6 +253,62 @@ def _ingest_async() -> None:
     cmd = f'cd "{GBRAIN_DIR}" && gbrain import "{ING}" --no-embed && gbrain embed --stale'
     subprocess.Popen(["/bin/bash", "-lc", cmd], stdout=open(LOG, "a"),
                      stderr=subprocess.STDOUT, start_new_session=True)
+
+
+# --- Voice inbox watcher (port of the old com.brain.voice 2-min launchd job) ---
+# BlackHole meeting recordings / synced voice memos dropped into the inbox get
+# transcribed into capture pages. Dedup is by CONTENT hash (old voice.py
+# invariant: the same file dropped twice never re-transcribes).
+VOICE_INBOX = Path(os.environ.get("VOICE_INBOX_DIR", str(HOME / "brain" / "inbox" / "audio")))
+VOICE_SEEN = GBRAIN_DIR / "logs" / "voice-inbox-seen.json"
+VOICE_MIN_BYTES = 32_000  # ≈ the old min_duration_s=3.0 floor
+VOICE_SETTLE_S = 60  # skip files still being written/synced
+
+
+def _voice_inbox_loop() -> None:
+    while True:
+        try:
+            seen = json.loads(VOICE_SEEN.read_text()) if VOICE_SEEN.exists() else {}
+        except Exception:
+            seen = {}
+        try:
+            files = ([p for p in VOICE_INBOX.iterdir() if p.suffix.lower() in AUDIO_EXTS]
+                     if VOICE_INBOX.exists() else [])
+        except Exception:
+            files = []
+        changed = False
+        for p in sorted(files):
+            try:
+                st = p.stat()
+                if st.st_size < VOICE_MIN_BYTES or time.time() - st.st_mtime < VOICE_SETTLE_S:
+                    continue
+                h = hashlib.sha256(p.read_bytes()).hexdigest()
+                if h in seen:
+                    continue
+                text = _transcribe(p)
+                # Mark seen even on empty transcript — an undecodable file must
+                # not re-transcribe every cycle; the failure is in capture.log.
+                seen[h] = ""
+                if text:
+                    page = _write_page(text, via="voice-inbox", file_rel=None)
+                    seen[h] = page.name
+                    _log(f"voice-inbox: {p.name} → {page.name}")
+                else:
+                    _log(f"voice-inbox: {p.name} produced no transcript")
+                changed = True
+            except Exception as e:  # noqa: BLE001 — one bad file never kills the loop
+                _log(f"voice-inbox failed for {p.name}: {e}")
+        if changed:
+            try:
+                VOICE_SEEN.parent.mkdir(parents=True, exist_ok=True)
+                VOICE_SEEN.write_text(json.dumps(seen))
+            except Exception as e:  # noqa: BLE001
+                _log(f"voice-inbox state write failed: {e}")
+            _ingest_async()
+        time.sleep(120)
+
+
+threading.Thread(target=_voice_inbox_loop, daemon=True).start()
 
 
 @app.get("/health")
@@ -282,8 +437,26 @@ def _newest_age_h(subdir: str) -> float | None:
 
 
 def _field(content: str, key: str) -> str:
-    m = re.search(rf"^{re.escape(key)}:\s*(.+)$", content, re.MULTILINE)
-    return m.group(1).strip() if m else ""
+    """Read a frontmatter field. Handles inline values, quoted values, and YAML
+    folded/literal block scalars (`>-`, `|`, …) by gathering indented lines."""
+    m = re.search(rf"^{re.escape(key)}:[ \t]*(.*)$", content, re.MULTILINE)
+    if not m:
+        return ""
+    val = m.group(1).strip()
+    if val and val[0] not in "|>":  # simple inline value
+        return val.strip("'\"")
+    # block scalar → gather the subsequent indented lines
+    buf = []
+    for ln in content[m.end():].splitlines():
+        if not ln.strip():
+            if buf:
+                break
+            continue
+        if ln[:1] in (" ", "\t"):
+            buf.append(ln.strip())
+        else:
+            break
+    return " ".join(buf).strip().strip("'\"")
 
 
 @app.get("/api/health")
@@ -308,13 +481,15 @@ def api_health(x_brain_key: str | None = Header(default=None)):
 
 @app.get("/api/pages")
 def api_pages(source: str | None = None, type: str | None = None, tag: str | None = None,
-              n: int = 30, x_brain_key: str | None = Header(default=None)):
+              n: int = 30, sort: str | None = None, x_brain_key: str | None = Header(default=None)):
     _require(x_brain_key)
     args = ["list", "--limit", str(n)]
     if type:
         args += ["--type", type]
     if tag:
         args += ["--tag", tag]
+    if sort in ("updated_desc", "created_desc", "slug"):
+        args += ["--sort", sort]
     rows = _parse_list(_gbrain(args))
     if source:
         rows = [r for r in rows if r["slug"].startswith(f"{source}/")]
@@ -374,8 +549,505 @@ async def api_decide(request: Request, x_brain_key: str | None = Header(default=
         content = re.sub(r"^status:\s*.+$", f"status: {new_status}", content, count=1, flags=re.MULTILINE)
     else:
         content = re.sub(r"^(---\n)", rf"\1status: {new_status}\n", content, count=1)
+    # decision audit (cheap provenance — who/when the status flipped)
+    decided_at = datetime.now().astimezone().isoformat(timespec="seconds")
+    content = re.sub(r"^decided_(at|by):\s*.+\n", "", content, flags=re.MULTILINE)
+    content = re.sub(r"^(---\n)", rf"\1decided_by: dashboard\ndecided_at: {decided_at}\n", content, count=1)
     _gbrain(["put", slug, "--content", content])
     return {"ok": True, "slug": slug, "status": new_status}
+
+
+# ---- Console adapter: stats / ops / graph / ask (all gbrain-backed) ----
+
+def _num(text: str, label: str) -> int:
+    m = re.search(rf"^{re.escape(label)}:\s*([\d,]+)", text, re.MULTILINE)
+    return int(m.group(1).replace(",", "")) if m else 0
+
+
+@app.get("/api/stats")
+def api_stats(x_brain_key: str | None = Header(default=None)):
+    _require(x_brain_key)
+    out = _gbrain(["stats"])
+    by_type: dict[str, int] = {}
+    seen_header = False
+    for line in out.splitlines():
+        if line.strip().lower().startswith("by type"):
+            seen_header = True
+            continue
+        if seen_header:
+            mm = re.match(r"\s+([\w-]+):\s*(\d+)", line)
+            if mm:
+                by_type[mm.group(1)] = int(mm.group(2))
+    return {"pages": _num(out, "Pages"), "chunks": _num(out, "Chunks"),
+            "embedded": _num(out, "Embedded"), "links": _num(out, "Links"),
+            "tags": _num(out, "Tags"), "timeline": _num(out, "Timeline"),
+            "by_type": by_type}
+
+
+@app.get("/api/ops")
+def api_ops(x_brain_key: str | None = Header(default=None)):
+    _require(x_brain_key)
+    health = api_health(x_brain_key)
+    stats = api_stats(x_brain_key)
+    ht = _gbrain(["health"])
+
+    def hf(label: str):
+        m = re.search(rf"{re.escape(label)}:\s*([\d.]+)", ht)
+        return float(m.group(1)) if m else None
+
+    score = re.search(r"Health score:\s*(\d+)\s*/\s*(\d+)", ht)
+    detail = {
+        "score": int(score.group(1)) if score else None,
+        "score_max": int(score.group(2)) if score else None,
+        "embed_coverage": hf("Embed coverage"),
+        "missing_embeddings": int(hf("Missing embeddings") or 0),
+        "stale_pages": int(hf("Stale pages") or 0),
+        "orphan_pages": int(hf("Orphan pages") or 0),
+    }
+    jobs_raw = _gbrain(["jobs", "list"])
+    jobs: list[dict] = []
+    if "No jobs" not in jobs_raw:
+        for line in jobs_raw.splitlines():
+            parts = [p for p in line.split() if p]
+            if len(parts) >= 2:
+                jobs.append({"id": parts[0], "status": parts[1], "raw": line.strip()})
+    return {"health": health, "stats": stats, "detail": detail, "jobs": jobs}
+
+
+def _ego_edges(slug: str, outbound: bool = True) -> list[dict]:
+    """Edges incident to `slug`: inbound via `backlinks` (clean JSON), outbound
+    via `graph` traversal. `graph-query` returns nothing for inbound-only nodes
+    (e.g. ticker pages), so backlinks is the reliable source."""
+    edges: list[dict] = []
+    try:
+        for e in json.loads(_gbrain(["backlinks", slug]) or "[]"):
+            fr, to = e.get("from_slug"), e.get("to_slug")
+            if fr and to:
+                edges.append({"from": fr, "to": to, "type": e.get("link_type", "")})
+    except Exception:
+        pass
+    if outbound:
+        try:
+            for n in json.loads(_gbrain(["graph", slug, "--depth", "1"]) or "[]"):
+                for lk in (n.get("links") or []):
+                    to = lk.get("to_slug") or lk.get("slug")
+                    if to and n.get("slug"):
+                        edges.append({"from": n["slug"], "to": to, "type": lk.get("link_type", "")})
+        except Exception:
+            pass
+    return edges
+
+
+def _top_hubs(k: int = 6) -> list[str]:
+    """Densest ticker hubs by inbound Tier-0 degree, read from the extractor's
+    local state file (fast, no subprocess, no 100-row `list` cap). The mention
+    edges it records ARE the density that makes a legible seed graph."""
+    try:
+        st = json.loads((GBRAIN_DIR / "logs" / "entity-extract-state.json").read_text())
+    except Exception:
+        return []
+    deg: dict[str, int] = {}
+    for edge in st.get("edges", []):
+        if len(edge) >= 2 and str(edge[1]).startswith("ticker/"):
+            deg[edge[1]] = deg.get(edge[1], 0) + 1
+    return [s for s, _ in sorted(deg.items(), key=lambda kv: -kv[1])[:k]]
+
+
+def _relation_graph(seeds: list[str], limit: int) -> dict | None:
+    """Union of the ego-graphs of several hub slugs → a real multi-hub network.
+    Shared source pages (a bookmark citing $NVDA and $MU) connect hubs, so it
+    reads as a graph, not a set of stars. Returns None if no edges."""
+    hubset = set(seeds)
+    edges: list[dict] = []
+    seen: set[tuple] = set()
+    for s in seeds:
+        for e in _ego_edges(s, outbound=True):
+            key = (e["from"], e["to"], e["type"])
+            if key not in seen:
+                seen.add(key)
+                edges.append(e)
+        if len(edges) >= limit:
+            break
+    edges = edges[:limit]
+    if not edges:
+        return None
+    deg: dict[str, int] = {}
+    for e in edges:
+        deg[e["from"]] = deg.get(e["from"], 0) + 1
+        deg[e["to"]] = deg.get(e["to"], 0) + 1
+    slugs = {e["from"] for e in edges} | {e["to"] for e in edges} | hubset
+    nodes = [{"slug": s, "source": s.split("/")[0], "type": "",
+              "title": s.split("/")[-1], "hub": s in hubset, "deg": deg.get(s, 0)}
+             for s in slugs]
+    src_counts: dict[str, int] = {}
+    for n in nodes:
+        src_counts[n["source"]] = src_counts.get(n["source"], 0) + 1
+    sources = sorted(({"source": s, "count": c} for s, c in src_counts.items()), key=lambda x: -x["count"])
+    return {"mode": "relations", "seed": seeds[0], "seeds": seeds, "auto_seed": seeds[0],
+            "nodes": nodes, "edges": edges, "sources": sources}
+
+
+@app.get("/api/graph")
+def api_graph(slug: str | None = None, depth: int = 2, limit: int = 400,
+              x_brain_key: str | None = Header(default=None)):
+    """Relation traversal when links exist; otherwise a corpus source-map
+    (pages clustered by source, sized by volume) — honest to the data on hand.
+
+    With no slug, auto-seeds from the densest ticker hubs so the Graph opens on a
+    real relation network instead of an empty source-map."""
+    _require(x_brain_key)
+    if slug:
+        g = _relation_graph([slug], limit)
+        if g:
+            g["seeds"] = [slug]
+            g.pop("auto_seed", None)
+            return g
+    else:
+        hubs = _top_hubs(6)
+        if hubs:
+            g = _relation_graph(hubs, limit)
+            if g:
+                return g
+    rows = _parse_list(_gbrain(["list", "--limit", str(limit)]))
+    counts: dict[str, int] = {}
+    nodes = []
+    for r in rows:
+        src = r["slug"].split("/")[0]
+        counts[src] = counts.get(src, 0) + 1
+        nodes.append({"slug": r["slug"], "source": src, "type": r["type"], "title": r["title"]})
+    sources = sorted(({"source": s, "count": c} for s, c in counts.items()),
+                     key=lambda x: -x["count"])
+    return {"mode": "corpus", "nodes": nodes, "sources": sources, "edges": []}
+
+
+def _sse(obj: dict) -> str:
+    return f"data: {json.dumps(obj)}\n\n"
+
+
+_SLUG_RE = re.compile(r"\b([a-z0-9][\w.-]*/[\w./-]+)\b")
+
+
+def _grounding(text: str, cap: int = 8) -> list[str]:
+    out, seen = [], set()
+    for m in _SLUG_RE.finditer(text):
+        s = m.group(1).rstrip(".,)")
+        if s not in seen and "/" in s:
+            seen.add(s)
+            out.append(s)
+        if len(out) >= cap:
+            break
+    return out
+
+
+@app.post("/api/ask")
+async def api_ask(request: Request, x_brain_key: str | None = Header(default=None)):
+    """The persistent AI-agent surface. Streams `gbrain think` (cited multi-hop
+    synthesis) over SSE; falls back to `gbrain query` (fast hybrid, no LLM) when
+    ?fast or the Claude bridge is down. Emits start → token* → done{grounding}."""
+    _require(x_brain_key)
+    data = await request.json()
+    q = (data.get("q") or data.get("question") or "").strip()
+    if not q:
+        raise HTTPException(400, "need q")
+    fast = bool(data.get("fast"))
+    bridge_up = _svc("http://127.0.0.1:8789/v1/models")
+    use_think = (not fast) and bridge_up
+    mode = "think" if use_think else "query"
+
+    def gen():
+        yield _sse({"event": "start", "mode": mode})
+        args = ["think", q] if use_think else ["query", q, "--limit", "8"]
+        buf: list[str] = []
+        try:
+            proc = subprocess.Popen(["gbrain", *args], cwd=str(GBRAIN_DIR),
+                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                                    text=True, bufsize=1)
+            assert proc.stdout is not None
+            for line in proc.stdout:
+                buf.append(line)
+                yield _sse({"event": "token", "text": line})
+            proc.wait(timeout=240)
+            yield _sse({"event": "done", "grounding": _grounding("".join(buf))})
+        except Exception as e:
+            _log(f"ask failed: {e}")
+            yield _sse({"event": "error", "detail": str(e)[:200]})
+
+    return StreamingResponse(gen(), media_type="text/event-stream",
+                             headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no",
+                                      "Connection": "keep-alive"})
+
+
+@app.get("/api/findings")
+def api_findings(x_brain_key: str | None = Header(default=None)):
+    """Ranked convergence findings (the '1+1=3' output), newest/highest first."""
+    _require(x_brain_key)
+    out = []
+    for p in _parse_list(_gbrain(["list", "--type", "finding", "--limit", "50"])):
+        content = _gbrain(["get", p["slug"]])
+        if _field(content, "status").lower() == "resolved":
+            continue
+        try:
+            score = float(_field(content, "score") or 0)
+        except ValueError:
+            score = 0.0
+        out.append({"slug": p["slug"], "ticker": _field(content, "ticker"),
+                    "score": score, "window": _field(content, "window"),
+                    "classes": [c.lower() for c in _parse_watchlist(content, "classes")],
+                    "title": p["title"]})
+    out.sort(key=lambda x: (-x["score"], -len(x["classes"])))  # score, then class-diversity
+    return {"findings": out}
+
+
+def _parse_watchlist(content: str, key: str) -> list[str]:
+    """Parse a frontmatter list — inline `key: [a, b]` OR block `key:\\n  - a`."""
+    lines = content.splitlines()
+    for i, ln in enumerate(lines):
+        m = re.match(rf"^{re.escape(key)}:\s*(.*)$", ln)
+        if not m:
+            continue
+        rest = m.group(1).strip()
+        if rest.startswith("["):
+            inner = rest[1:rest.rfind("]")] if "]" in rest else rest[1:]
+            return [s.strip().strip("'\"").upper() for s in inner.split(",") if s.strip()]
+        out = []
+        for ln2 in lines[i + 1:]:
+            mm = re.match(r"^\s*-\s*(.+)$", ln2)
+            if mm:
+                out.append(mm.group(1).strip().strip("'\"").upper())
+            elif ln2.strip() == "":
+                continue
+            else:
+                break
+        return out
+    return []
+
+
+@app.get("/api/watchlist")
+def api_watchlist(x_brain_key: str | None = Header(default=None)):
+    """The Forge-owned watchlist (held/watched tickers) that drives the pollers."""
+    _require(x_brain_key)
+    content = _gbrain(["get", "finance/watchlist"])
+    return {"held": _parse_watchlist(content, "held"), "watched": _parse_watchlist(content, "watched")}
+
+
+@app.put("/api/watchlist")
+async def api_watchlist_put(request: Request, x_brain_key: str | None = Header(default=None)):
+    """Forge (or the dashboard) writes the watchlist. Overwrites finance/watchlist."""
+    _require(x_brain_key)
+    data = await request.json()
+    held = [str(s).upper().strip() for s in (data.get("held") or []) if str(s).strip()]
+    watched = [str(s).upper().strip() for s in (data.get("watched") or []) if str(s).strip()]
+    by = str(data.get("written_by") or "api")
+    body = ("---\ntype: note\ntitle: Watchlist\nsource: watchlist\n"
+            f"written_by: {by}\nheld: [{', '.join(held)}]\nwatched: [{', '.join(watched)}]\n"
+            "---\n\n# Watchlist\n\nForge-owned source of truth for held/watched tickers. "
+            "The EDGAR / permit / convergence pollers read this page.\n")
+    _gbrain(["put", "finance/watchlist", "--content", body])
+    return {"ok": True, "held": held, "watched": watched}
+
+
+def _parse_tv_text(raw: str) -> dict:
+    """TradingView alerts send JSON when you template it, else a freeform string.
+    Accept `k=v;k=v`, or scrape `SYMBOL ... 123.4` from prose."""
+    out: dict = {}
+    if "=" in raw and "{" not in raw:
+        for part in re.split(r"[;\n]", raw):
+            if "=" in part:
+                k, v = part.split("=", 1)
+                out[k.strip().lower()] = v.strip()
+    if "symbol" not in out and "ticker" not in out:
+        m = re.search(r"\b([A-Z]{1,6})(?::[A-Z]{1,6})?\b", raw)
+        if m:
+            out["symbol"] = m.group(1)
+    if "price" not in out and "level" not in out:
+        m = re.search(r"(\d+(?:\.\d+)?)", raw)
+        if m:
+            out["price"] = m.group(1)
+    if "message" not in out:
+        out["message"] = raw.strip()[:280]
+    return out
+
+
+def _ensure_ticker(sym: str) -> str:
+    slug = f"ticker/{sym.lower()}"
+    if not (_gbrain(["get", slug]) or "").strip():
+        _gbrain(["put", slug, "--content",
+                 f"---\ntype: ticker\ntitle: {sym}\nsymbol: {sym}\nsource: tradingview\ntags: [ticker]\n---\n\n"
+                 f"# {sym}\n\nTicker hub.\n"])
+    return slug
+
+
+@app.post("/webhooks/tradingview")
+async def tradingview_webhook(request: Request):
+    """TradingView alert → an `index_level` signal page + a `tracks_level` edge to
+    the ticker, so a level break becomes the price/level signal class the
+    convergence engine reads. TV can't send custom headers reliably, so the shared
+    secret rides in the body/query (`token=`), checked against Keychain
+    `TRADINGVIEW_TOKEN` when configured (public over the Funnel — set one)."""
+    raw = (await request.body()).decode("utf-8", "ignore")
+    try:
+        payload = json.loads(raw) if raw.strip().startswith("{") else _parse_tv_text(raw)
+    except Exception:
+        payload = _parse_tv_text(raw)
+    # _secret propagates a Keychain failure → 500, which is the safe direction
+    # here (fail closed): this endpoint is public over the Funnel.
+    want = _secret("TRADINGVIEW_TOKEN")
+    if want and (payload.get("token") or request.query_params.get("token")) != want:
+        raise HTTPException(401, "bad tradingview token")
+    sym = re.sub(r"^[A-Za-z]+:", "", str(payload.get("symbol") or payload.get("ticker") or "")).upper().strip()
+    if not re.fullmatch(r"[A-Z]{1,6}", sym):
+        raise HTTPException(400, "no valid symbol in alert")
+    price = str(payload.get("price") or payload.get("close") or "").strip()
+    level = str(payload.get("level") or payload.get("value") or price).strip()
+    direction = str(payload.get("direction") or payload.get("action") or "").lower().strip()
+    msg = str(payload.get("message") or payload.get("comment") or raw[:200]).replace('"', "'").strip()
+    day = datetime.now().strftime("%Y-%m-%d")
+    slug = f"index_level/{sym.lower()}-{day}"
+    body = (f"---\ntype: index_level\ntitle: \"{sym} level {direction or 'alert'} {level}\"\n"
+            f"source: tradingview\nsymbol: {sym}\nlevel: \"{level}\"\nprice: \"{price}\"\n"
+            f"direction: {direction or 'na'}\ndate: {day}\ntags: [level, tradingview, {sym.lower()}]\n---\n\n"
+            f"# {sym} — level {direction or 'alert'} {level}\n\n"
+            f"- **Symbol:** ${sym}  ·  **Level:** {level}  ·  **Price:** {price}  ·  **Direction:** {direction or 'n/a'}\n"
+            f"- **Alert:** {msg}\n")
+    tslug = _ensure_ticker(sym)
+    _gbrain(["put", slug, "--content", body])
+    _gbrain(["link", slug, tslug, "--link-type", "tracks_level", "--link-source", "tradingview"])
+    _log(f"tradingview alert: {sym} {direction} {level} → {slug}")
+    return {"ok": True, "symbol": sym, "level": level, "slug": slug}
+
+
+@app.post("/internal/post-digest")
+async def internal_post_digest(request: Request):
+    """Deliver the latest daily digest to Discord FROM the always-on sidecar, which
+    holds Keychain access. The short-lived feeds-cron can't read the Keychain when
+    the Mac slept through 06:30 (login keychain locked → -25320), so delivery moved
+    here. Localhost-only (no key needed — the cron curls 127.0.0.1)."""
+    host = request.client.host if request.client else ""
+    if host not in ("127.0.0.1", "::1"):
+        raise HTTPException(403, "internal endpoint (localhost only)")
+    try:
+        webhook = _secret("DISCORD_WEBHOOK_URL")
+    except Exception as e:  # noqa: BLE001 — locked keychain + no file yet
+        _log(f"digest webhook secret unavailable: {e}")
+        return {"ok": False, "reason": "webhook secret unavailable (keychain locked?)"}
+    if not webhook:
+        return {"ok": False, "reason": "no DISCORD_WEBHOOK_URL"}
+    ddir = HOME / "brains-ingest" / "digests"
+    files = sorted(ddir.glob("*.md"), reverse=True) if ddir.exists() else []
+    if not files:
+        return {"ok": False, "reason": "no digest page"}
+    raw = files[0].read_text()
+    body = re.sub(r"^---.*?---\n", "", raw, count=1, flags=re.DOTALL).strip()
+    text = f"**🧠 BRAINS daily digest — {files[0].stem}**\n\n{body}"
+    chunks, cur = [], ""
+    for line in text.splitlines(keepends=True):
+        if len(cur) + len(line) > 1900 and cur:
+            chunks.append(cur); cur = ""
+        cur += line
+    if cur:
+        chunks.append(cur)
+    sent = 0
+    for ch in chunks[:6]:
+        try:
+            # Discord requires a real User-Agent — the default Python-urllib UA 403s.
+            req = urllib.request.Request(webhook, data=json.dumps({"content": ch}).encode(),
+                                         headers={"Content-Type": "application/json",
+                                                  "User-Agent": "BRAINS-digest/1.0 (+https://github.com/awvmeijer/gbrain)"},
+                                         method="POST")
+            urllib.request.urlopen(req, timeout=15)
+            sent += 1
+        except Exception as e:
+            _log(f"digest post chunk failed: {e}")
+    return {"ok": sent > 0, "sent": sent, "digest": files[0].stem}
+
+
+def _ics_esc(s: str) -> str:
+    return (s or "").replace("\\", "\\\\").replace(";", "\\;").replace(",", "\\,").replace("\n", "\\n")
+
+
+@app.get("/calendar/todos.ics")
+def todos_ics(key: str | None = None):
+    """Subscribable calendar of todos/proposals with a `due` date. Calendar apps
+    subscribe with `?key=<CAPTURE_KEY>` in the URL (they can't send headers). Each
+    due-bearing todo/proposal → an all-day VEVENT; the label carries the status."""
+    _require(key)
+    stamp = datetime.now().strftime("%Y%m%dT%H%M%SZ")
+    lines = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//BRAINS//todos//EN",
+             "CALSCALE:GREGORIAN", "X-WR-CALNAME:BRAINS todos"]
+    rows = _parse_list(_gbrain(["list", "--type", "todo", "--limit", "100"])) + \
+        _parse_list(_gbrain(["list", "--type", "proposal", "--limit", "100"]))
+    for p in rows:
+        content = _gbrain(["get", p["slug"]])
+        due = re.sub(r"[^0-9]", "", _field(content, "due") or "")[:8]
+        if len(due) != 8:
+            continue
+        status = (_field(content, "status") or "open").lower()
+        summ = p["title"] or "todo"
+        if status not in ("open", "pending"):
+            summ = f"[{status}] {summ}"
+        desc = (_field(content, "rationale") or _field(content, "note") or "").replace("\n", " ")[:200]
+        uid = re.sub(r"[^a-z0-9]+", "-", p["slug"].lower())
+        lines += ["BEGIN:VEVENT", f"UID:{uid}@brains", f"DTSTAMP:{stamp}",
+                  f"DTSTART;VALUE=DATE:{due}", f"SUMMARY:{_ics_esc(summ)}",
+                  f"DESCRIPTION:{_ics_esc(desc)}", "END:VEVENT"]
+    lines.append("END:VCALENDAR")
+    return Response("\r\n".join(lines) + "\r\n", media_type="text/calendar")
+
+
+def _repo_slug(repo: str) -> str:
+    """Canonical repo (git remote or path) → lowercase gbrain slug."""
+    s = re.sub(r"^\w+://", "", (repo or "").strip()).replace(".git", "")
+    s = re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-")
+    return s[:60] or "local"
+
+
+@app.get("/api/context")
+def api_context(repo: str = "", x_brain_key: str | None = Header(default=None)):
+    """Per-repo brain context for the Claude Code SessionStart hook (≤4KB markdown)."""
+    _require(x_brain_key)
+    slug = _repo_slug(repo)
+    lines: list[str] = []
+    sessions = [r for r in _parse_list(_gbrain(["list", "--type", "session", "--limit", "50"]))
+                if r["slug"].startswith(f"sessions/{slug}/")][:3]
+    if sessions:
+        lines.append("**Recent Claude Code sessions in this repo:**")
+        for r in sessions:
+            lines.append(f"- {r['date']} — {r['title']}")
+    q = (repo.rstrip("/").split("/")[-1] or slug).replace("-", " ")
+    hits = _parse_search(_gbrain(["query", q, "--limit", "3"]))
+    if hits:
+        lines.append("\n**Related in the brain:**")
+        for h in hits:
+            lines.append(f"- `{h['slug']}` — {h['snippet'][:70]}")
+    md = ("### BRAINS/ — what the brain knows about this repo\n" + "\n".join(lines))[:4000] if lines else ""
+    return {"repo": repo, "slug": slug, "context": md}
+
+
+@app.post("/api/session-record")
+async def api_session_record(request: Request, x_brain_key: str | None = Header(default=None)):
+    """SessionEnd → one immutable session page (repo, files touched, commits)."""
+    _require(x_brain_key)
+    d = await request.json()
+    repo = str(d.get("repo") or "")
+    slug = _repo_slug(repo)
+    ts = re.sub(r"[^0-9-]", "", str(d.get("ts") or "").replace("T", "-")).strip("-")[:19] \
+        or datetime.now().strftime("%Y-%m-%d-%H%M%S")
+    title = (str(d.get("title") or "session").strip() or "session")[:80].replace('"', "'")
+    files = [str(f) for f in (d.get("files") or [])][:40]
+    commits = [str(c) for c in (d.get("commits") or [])][:20]
+    sid = str(d.get("session_id") or "")
+    body = [
+        "---", "type: session", f'title: "{title}"', "source: claude-code",
+        f"repo: {repo}", f"session_id: {sid}", f"date: {datetime.now().strftime('%Y-%m-%d')}",
+        "tags: [session, claude-code]", "---", "", f"# Session — {title}", "", f"**Repo:** {repo}", "",
+    ]
+    if files:
+        body += ["## Files touched"] + [f"- `{f}`" for f in files] + [""]
+    if commits:
+        body += ["## Commits this session"] + [f"- {c}" for c in commits] + [""]
+    fslug = f"sessions/{slug}/{ts}"
+    _gbrain(["put", fslug, "--content", "\n".join(body)])
+    return {"ok": True, "slug": fslug}
 
 
 # Self-destructing service worker: the retired PWA registered /sw.js (cache-first

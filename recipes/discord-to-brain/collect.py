@@ -6,8 +6,11 @@ channel-per-day, and writes markdown pages into an output dir that
 `gbrain import` then turns into pages. The agent/enrichment half (entity
 extraction, timeline) is GBrain's job after import.
 
-- Token: Keychain service `brain`, key `DISCORD_BOT_TOKEN` (shared with the
-  brain bot). Never printed.
+- Token: env DISCORD_BOT_TOKEN → ~/.gbrain/discord_bot.token (0600) → Keychain
+  service `brain`, key `DISCORD_BOT_TOKEN` (canonical; shared with the brain
+  bot). Never printed. The file tier exists because the 06:30 launchd cron hits
+  a locked login keychain after sleep (-25320); the capture sidecar provisions
+  the file at login, and a successful keyring read here re-provisions it too.
 - Channels: auto-discovers the bot's guild text channels; skips any in
   DISCORD_INGEST_EXCLUDE (default "digest") to avoid re-ingesting the brain's
   own posted digests (feedback loop). Override with DISCORD_INGEST_CHANNELS
@@ -33,12 +36,40 @@ import keyring
 
 API = "https://discord.com/api/v10"
 SERVICE = "brain"
+TOKEN_FILE = Path.home() / ".gbrain" / "discord_bot.token"
 
 
 def _token() -> str:
-    tok = keyring.get_password(SERVICE, "DISCORD_BOT_TOKEN")
+    # Cheapest-first (env → token file → Keychain), same idiom as the capture
+    # sidecar's _key(). The Keychain stays canonical, but a launchd cron can't
+    # read it when the login keychain locked after sleep (-25320) — the 0600
+    # file is the always-readable copy.
+    tok = os.environ.get("DISCORD_BOT_TOKEN") or None
     if not tok:
-        print("ERROR: no DISCORD_BOT_TOKEN in keychain (service 'brain').", file=sys.stderr)
+        try:
+            tok = TOKEN_FILE.read_text().strip() or None
+        except Exception:
+            tok = None
+    if not tok:
+        try:
+            tok = keyring.get_password(SERVICE, "DISCORD_BOT_TOKEN")
+        except Exception:  # noqa: BLE001 — locked keychain (-25320) et al.
+            tok = None
+        if tok:
+            # Self-provision the token file so the next after-sleep cron run
+            # never needs the Keychain (0600; mirrors client.key provisioning).
+            try:
+                TOKEN_FILE.parent.mkdir(parents=True, exist_ok=True)
+                fd = os.open(TOKEN_FILE, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+                with os.fdopen(fd, "w") as f:
+                    f.write(tok)
+            except Exception:  # noqa: BLE001 — provisioning is best-effort
+                pass
+    if not tok:
+        print(
+            f"ERROR: no DISCORD_BOT_TOKEN (env, {TOKEN_FILE}, or keychain service 'brain').",
+            file=sys.stderr,
+        )
         sys.exit(1)
     return tok
 

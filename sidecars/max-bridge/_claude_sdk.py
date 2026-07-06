@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any
@@ -57,19 +58,27 @@ async def _collect(
     text_parts: list[str] = []
     session_id: str | None = None
 
-    async for msg in query(prompt=prompt, options=opts):
-        name = type(msg).__name__
-        if name in ("AssistantMessage", "Assistant"):
-            content = getattr(msg, "content", None) or []
-            if isinstance(content, str):
-                text_parts.append(content)
-            else:
-                for block in content:
-                    t = getattr(block, "text", None)
-                    if t:
-                        text_parts.append(t)
-        elif name in ("ResultMessage", "Result"):
-            session_id = getattr(msg, "session_id", None) or session_id
+    try:
+        async for msg in query(prompt=prompt, options=opts):
+            name = type(msg).__name__
+            if name in ("AssistantMessage", "Assistant"):
+                content = getattr(msg, "content", None) or []
+                if isinstance(content, str):
+                    text_parts.append(content)
+                else:
+                    for block in content:
+                        t = getattr(block, "text", None)
+                        if t:
+                            text_parts.append(t)
+            elif name in ("ResultMessage", "Result"):
+                session_id = getattr(msg, "session_id", None) or session_id
+    except Exception:
+        # The CLI reports API-side failures (401 logged-out CLI, 429/529
+        # overload) as an error-flagged result AFTER any assistant text has
+        # streamed ("Claude Code returned an error result: success"). If text
+        # already arrived, the turn is usable — don't discard it.
+        if not text_parts:
+            raise
 
     return ClaudeResult(text="".join(text_parts).strip(), session_id=session_id)
 
@@ -81,10 +90,24 @@ def complete(
     system: str | None = None,
     resume: str | None = None,
 ) -> ClaudeResult:
-    """One-shot Claude call. Pass `resume=session_id` for multi-turn continuity."""
+    """One-shot Claude call. Pass `resume=session_id` for multi-turn continuity.
+
+    Retries twice with backoff — API-side blips (429/529 overload) surface as
+    generic exceptions here, and a bounded retry rides them out the same way
+    the ollama wrapper does. A persistent failure (e.g. logged-out CLI) still
+    raises after the last attempt.
+    """
     prev = _enter_internal()
     try:
-        return asyncio.run(_collect(prompt, model=model, system=system, resume=resume))
+        last_err: Exception | None = None
+        for delay_s in (0, 2, 8):
+            if delay_s:
+                time.sleep(delay_s)
+            try:
+                return asyncio.run(_collect(prompt, model=model, system=system, resume=resume))
+            except Exception as e:  # noqa: BLE001 — bounded retry, re-raised below
+                last_err = e
+        raise last_err  # type: ignore[misc]
     finally:
         _exit_internal(prev)
 

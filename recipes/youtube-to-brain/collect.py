@@ -142,7 +142,10 @@ def main() -> None:
         seen = json.loads(seen_path.read_text())
 
     written = 0
-    with httpx.Client() as client:
+    # SOCS=CAI = a stored "reject all" consent choice. Without it, EU IPs get
+    # 302'd to consent.youtube.com (started 2026-07-04) and the interstitial
+    # carries no channel id → every handle resolved None, pages written: 0.
+    with httpx.Client(cookies={"SOCS": "CAI"}) as client:
         for handle in _channels():
             cid = _resolve_channel_id(client, handle)
             if not cid:

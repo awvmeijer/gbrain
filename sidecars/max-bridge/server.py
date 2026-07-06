@@ -179,9 +179,23 @@ async def chat_completions(req: Request):
 
     if not stream:
         async with _SEM:
-            result = await run_in_threadpool(
-                lambda: claude.complete(prompt, model=model, system=system)
-            )
+            try:
+                result = await run_in_threadpool(
+                    lambda: claude.complete(prompt, model=model, system=system)
+                )
+            except Exception as e:  # noqa: BLE001
+                # OpenAI-style error body + 503 so callers see a retryable
+                # status instead of a bare 500 traceback. "error result:
+                # success" = API-side failure through the CLI — most often a
+                # logged-out CLI (fix: run `claude` → /login) or 429/529 blips.
+                return JSONResponse(
+                    status_code=503,
+                    content={"error": {
+                        "message": f"{e} (if persistent, check `claude` CLI login: run `claude` then /login)",
+                        "type": "upstream_error",
+                        "code": "claude_cli_unavailable",
+                    }},
+                )
         return {
             "id": cid,
             "object": "chat.completion",
