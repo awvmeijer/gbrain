@@ -100,6 +100,12 @@ def _parse_transcript(path: str, cwd: str):
 
 
 def main() -> None:
+    # Internal agent-SDK calls (max-bridge reasoning, health pings) propagate
+    # this marker through claude-agent-sdk → Claude Code → hooks. Recording
+    # them would mint a junk session page per bridge call — the old brain
+    # hooks honored this contract; keep it.
+    if os.environ.get("BRAIN_INTERNAL_AGENT"):
+        return
     mode = sys.argv[1] if len(sys.argv) > 1 else "start"
     try:
         inp = json.load(sys.stdin)
