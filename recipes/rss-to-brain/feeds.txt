@@ -4,6 +4,7 @@ bloomberg-markets | Bloomberg Markets | https://feeds.bloomberg.com/markets/news
 wsj-markets | WSJ Markets | https://feeds.a.dj.com/rss/RSSMarketsMain.xml
 ft-markets | FT Markets | https://www.ft.com/markets?format=rss
 seekingalpha-top | Seeking Alpha Top | https://seekingalpha.com/market_currents.xml
-reuters-business | Reuters Business | https://www.reutersagency.com/feed/?best-topics=business&post_type=best
+# reuters-business retired 2026-07: Reuters killed public RSS (agency feed 301→404, legacy endpoints dead/401)
+yahoo-finance | Yahoo Finance News | https://finance.yahoo.com/news/rssindex
 cnbc-top | CNBC Top News | https://search.cnbc.com/rs/search/combinedcms/view.xml?partnerId=wrss01&id=100003114
 marketwatch-top | MarketWatch Top | https://feeds.content.dowjones.io/public/rss/mw_topstories
