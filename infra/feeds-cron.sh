@@ -31,10 +31,17 @@ gbrain import "$ING" --no-embed || log "  import failed"
 gbrain embed --stale || log "  embed failed"
 
 log "synthesize daily digest"
-SINCE="$(date -v-2d +%F 2>/dev/null || date +%F)"
-# Runs the fintwit-analyst skill's lens, scoped to ~2d, and cleans think's output
-# (strips the echoed question + Model footer; renders any raw JSON).
-DIGEST="$(gbrain think "Across my fintwit X feed, finance YouTube creators, Telegram scanner channels, and Discord from the last day: group by theme; name every ticker with the source's direction (bullish/bearish/watch) + any level or catalyst; treat the Telegram scanner ticker lists as a SCREEN (no direction), and LEAD with OVERLAPS — a scanner-flagged ticker that an X/YouTube source also has a directional take on; then what changed (new calls, reversals, conviction shifts); call out where sources conflict, both sides attributed; attribute every line to a source. Do NOT treat mention volume as a buy/sell signal. (skill: fintwit-analyst)" --since "$SINCE" 2>/dev/null | "$BV" "$GB/infra/clean_digest.py")"
+# Deterministic context: recipes/fintwit-analyst/digest.py assembles ALL
+# in-window source pages from disk and synthesizes via the Max bridge.
+# (The old `gbrain think --since` path starved itself: ticker-list pages
+# rank poorly against a thematic query, and prior digests self-poison the
+# retrieval — see 2026-07-07 "no data" digest with fresh pages embedded.)
+DIGEST="$("$BV" "$GB/recipes/fintwit-analyst/digest.py" "$ING" --days 2)"
+if [ -z "$DIGEST" ]; then
+  log "  deterministic digest failed; falling back to gbrain think"
+  SINCE="$(date -v-2d +%F 2>/dev/null || date +%F)"
+  DIGEST="$(gbrain think "Across my fintwit X feed, finance YouTube creators, Telegram scanner channels, and Discord from the last day: group by theme; name every ticker with the source's direction (bullish/bearish/watch) + any level or catalyst; treat the Telegram scanner ticker lists as a SCREEN (no direction), and LEAD with OVERLAPS — a scanner-flagged ticker that an X/YouTube source also has a directional take on; then what changed (new calls, reversals, conviction shifts); call out where sources conflict, both sides attributed; attribute every line to a source. Do NOT treat mention volume as a buy/sell signal. (skill: fintwit-analyst)" --since "$SINCE" 2>/dev/null | "$BV" "$GB/infra/clean_digest.py")"
+fi
 
 if [ -n "$DIGEST" ]; then
   # Persist as a page FIRST — the dashboard "Today" tab + the sidecar delivery both read it.
