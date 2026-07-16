@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.brains.mcp</string>
+    <!-- OAuth-scoped MCP daemon (Phase 2 of the Hermes bridge). Postgres-only:
+         on PGLite this would hold the single-writer lock and starve the
+         capture sidecar — do not load unless ~/.gbrain/config.json says
+         engine=postgres. Loopback bind on purpose; remote access goes through
+         Tailscale if ever needed. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/awvmeijer/.bun/bin/gbrain</string>
+        <string>serve</string>
+        <string>--http</string>
+        <string>--enable-dcr</string>
+        <string>--port</string>
+        <string>3131</string>
+        <string>--bind</string>
+        <string>127.0.0.1</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/awvmeijer/gbrain</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/opt/postgresql@17/bin:/opt/homebrew/bin:/Users/awvmeijer/.bun/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>15</integer>
+    <key>StandardOutPath</key>
+    <string>/Users/awvmeijer/gbrain/logs/mcp-svc.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/awvmeijer/gbrain/logs/mcp-svc.log</string>
+</dict>
+</plist>
