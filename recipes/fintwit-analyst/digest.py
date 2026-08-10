@@ -75,6 +75,22 @@ def _youtube_slice(text: str) -> str:
     return f"{head}\n\n## Digest\n{body}"
 
 
+def _scorecard_block(ing: Path) -> str:
+    """creator-scorecard integration (recipes/creator-scorecard): append the
+    latest source track-record page, if any, so synthesis can weight
+    conflicting calls by each source's graded hit rate."""
+    pages = sorted((ing / "scorecards").glob("????-??-??.md"))
+    if not pages:
+        return ""
+    return (
+        "\n\n===== SOURCE TRACK RECORD (creator-scorecard) =====\n"
+        "When sources above conflict on a ticker, weight the calls by each "
+        "source's historical hit rate in this table and say so inline "
+        '(e.g. "X, whose 30d hit rate is 75%, says ...").\n'
+        + pages[-1].read_text(errors="ignore")[:PER_FILE_CAP]
+    )
+
+
 def gather(ing: Path, days: int) -> tuple[list[tuple[str, str]], list[str]]:
     cutoff = (date.today() - timedelta(days=days)).isoformat()
     blocks: list[tuple[str, str]] = []
@@ -129,6 +145,7 @@ def main() -> int:
         used += len(piece)
 
     user_msg = ANALYST_PROMPT.format(window=window) + "".join(ctx)
+    user_msg += _scorecard_block(ing)  # creator-scorecard: weight by track record
     if dropped:
         user_msg += f"\n\n[note: {dropped} lower-priority source pages omitted for length]"
     if skipped:

@@ -1,0 +1,1104 @@
+{
+  "generated": "2026-08-10",
+  "params": {
+    "horizons": [
+      7,
+      30
+    ],
+    "min_graded": 5,
+    "benchmark": "SPY"
+  },
+  "totals": {
+    "calls": 685,
+    "graded_7": 504,
+    "graded_30": 209
+  },
+  "unknown_tickers": [
+    "AOI",
+    "CXMT",
+    "CYCC",
+    "DXY",
+    "IGP",
+    "KOSPI",
+    "KSHB",
+    "OIL",
+    "OS",
+    "RJC",
+    "SAND",
+    "TSMC",
+    "ZI",
+    "ZTA"
+  ],
+  "sources": {
+    "x/@amitisinvesting": {
+      "n_calls": 2,
+      "n_graded_7": 2,
+      "hits_7": 0,
+      "hit_rate_7": 0.0,
+      "avg_excess_7": -0.0256,
+      "n_graded_30": 1,
+      "hits_30": 0,
+      "hit_rate_30": 0.0,
+      "avg_excess_30": -0.2352,
+      "best_call": {
+        "ticker": "HOOD",
+        "date": "2026-07-06",
+        "direction": "bullish",
+        "excess_30": -0.2352
+      },
+      "worst_call": {
+        "ticker": "HOOD",
+        "date": "2026-07-06",
+        "direction": "bullish",
+        "excess_30": -0.2352
+      },
+      "ranked": false
+    },
+    "x/@banana3stocks": {
+      "n_calls": 10,
+      "n_graded_7": 8,
+      "hits_7": 4,
+      "hit_rate_7": 0.5,
+      "avg_excess_7": -0.009,
+      "n_graded_30": 5,
+      "hits_30": 2,
+      "hit_rate_30": 0.4,
+      "avg_excess_30": -0.1377,
+      "best_call": {
+        "ticker": "AMZN",
+        "date": "2026-07-01",
+        "direction": "bullish",
+        "excess_30": 0.1219
+      },
+      "worst_call": {
+        "ticker": "MU",
+        "date": "2026-06-29",
+        "direction": "bullish",
+        "excess_30": -0.3392
+      },
+      "ranked": true
+    },
+    "x/@cantonmeow": {
+      "n_calls": 15,
+      "n_graded_7": 6,
+      "hits_7": 3,
+      "hit_rate_7": 0.5,
+      "avg_excess_7": -0.0408,
+      "n_graded_30": 2,
+      "hits_30": 0,
+      "hit_rate_30": 0.0,
+      "avg_excess_30": -0.2228,
+      "best_call": {
+        "ticker": "SMH",
+        "date": "2026-06-29",
+        "direction": "bullish",
+        "excess_30": -0.1866
+      },
+      "worst_call": {
+        "ticker": "ENPH",
+        "date": "2026-06-29",
+        "direction": "bullish",
+        "excess_30": -0.2589
+      },
+      "ranked": false
+    },
+    "x/@chriscamillo": {
+      "n_calls": 2,
+      "n_graded_7": 2,
+      "hits_7": 1,
+      "hit_rate_7": 0.5,
+      "avg_excess_7": 0.0995,
+      "n_graded_30": 1,
+      "hits_30": 1,
+      "hit_rate_30": 1.0,
+      "avg_excess_30": 0.0378,
+      "best_call": {
+        "ticker": "AMZN",
+        "date": "2026-06-17",
+        "direction": "bullish",
+        "excess_30": 0.0378
+      },
+      "worst_call": {
+        "ticker": "AMZN",
+        "date": "2026-06-17",
+        "direction": "bullish",
+        "excess_30": 0.0378
+      },
+      "ranked": false
+    },
+    "x/@couch_investor": {
+      "n_calls": 3,
+      "n_graded_7": 0,
+      "hits_7": 0,
+      "hit_rate_7": null,
+      "avg_excess_7": null,
+      "n_graded_30": 0,
+      "hits_30": 0,
+      "hit_rate_30": null,
+      "avg_excess_30": null,
+      "best_call": null,
+      "worst_call": null,
+      "ranked": false
+    },
+    "x/@cwb_research": {
+      "n_calls": 2,
+      "n_graded_7": 2,
+      "hits_7": 0,
+      "hit_rate_7": 0.0,
+      "avg_excess_7": -0.0479,
+      "n_graded_30": 0,
+      "hits_30": 0,
+      "hit_rate_30": null,
+      "avg_excess_30": null,
+      "best_call": null,
+      "worst_call": null,
+      "ranked": false
+    },
+    "x/@daniel_koss": {
+      "n_calls": 11,
+      "n_graded_7": 8,
+      "hits_7": 5,
+      "hit_rate_7": 0.625,
+      "avg_excess_7": 0.0784,
+      "n_graded_30": 3,
+      "hits_30": 2,
+      "hit_rate_30": 0.667,
+      "avg_excess_30": -0.0366,
+      "best_call": {
+        "ticker": "NBIS",
+        "date": "2026-06-26",
+        "direction": "bearish",
+        "excess_30": 0.232
+      },
+      "worst_call": {
+        "ticker": "ASTS",
+        "date": "2026-06-29",
+        "direction": "bullish",
+        "excess_30": -0.3733
+      },
+      "ranked": false
+    },
+    "x/@fibonacci_ta": {
+      "n_calls": 43,
+      "n_graded_7": 27,
+      "hits_7": 11,
+      "hit_rate_7": 0.407,
+      "avg_excess_7": -0.0003,
+      "n_graded_30": 8,
+      "hits_30": 1,
+      "hit_rate_30": 0.125,
+      "avg_excess_30": -0.156,
+      "best_call": {
+        "ticker": "IREN",
+        "date": "2026-07-01",
+        "direction": "bearish",
+        "excess_30": 0.1522
+      },
+      "worst_call": {
+        "ticker": "WYFI",
+        "date": "2026-06-30",
+        "direction": "bullish",
+        "excess_30": -0.3175
+      },
+      "ranked": true
+    },
+    "x/@futurenvesting": {
+      "n_calls": 1,
+      "n_graded_7": 1,
+      "hits_7": 0,
+      "hit_rate_7": 0.0,
+      "avg_excess_7": -0.08,
+      "n_graded_30": 0,
+      "hits_30": 0,
+      "hit_rate_30": null,
+      "avg_excess_30": null,
+      "best_call": null,
+      "worst_call": null,
+      "ranked": false
+    },
+    "x/@heidingout": {
+      "n_calls": 18,
+      "n_graded_7": 15,
+      "hits_7": 7,
+      "hit_rate_7": 0.467,
+      "avg_excess_7": 0.0002,
+      "n_graded_30": 6,
+      "hits_30": 3,
+      "hit_rate_30": 0.5,
+      "avg_excess_30": 0.0015,
+      "best_call": {
+        "ticker": "TE",
+        "date": "2026-07-01",
+        "direction": "bearish",
+        "excess_30": 0.5475
+      },
+      "worst_call": {
+        "ticker": "ABCL",
+        "date": "2026-06-28",
+        "direction": "bullish",
+        "excess_30": -0.3483
+      },
+      "ranked": true
+    },
+    "x/@hypertechinvest": {
+      "n_calls": 2,
+      "n_graded_7": 1,
+      "hits_7": 1,
+      "hit_rate_7": 1.0,
+      "avg_excess_7": 0.0815,
+      "n_graded_30": 0,
+      "hits_30": 0,
+      "hit_rate_30": null,
+      "avg_excess_30": null,
+      "best_call": null,
+      "worst_call": null,
+      "ranked": false
+    },
+    "x/@invst_informant": {
+      "n_calls": 6,
+      "n_graded_7": 4,
+      "hits_7": 3,
+      "hit_rate_7": 0.75,
+      "avg_excess_7": 0.0897,
+      "n_graded_30": 1,
+      "hits_30": 1,
+      "hit_rate_30": 1.0,
+      "avg_excess_30": 0.1098,
+      "best_call": {
+        "ticker": "COIN",
+        "date": "2026-06-26",
+        "direction": "bullish",
+        "excess_30": 0.1098
+      },
+      "worst_call": {
+        "ticker": "COIN",
+        "date": "2026-06-26",
+        "direction": "bullish",
+        "excess_30": 0.1098
+      },
+      "ranked": false
+    },
+    "x/@itsalasdairmann": {
+      "n_calls": 4,
+      "n_graded_7": 4,
+      "hits_7": 4,
+      "hit_rate_7": 1.0,
+      "avg_excess_7": 0.064,
+      "n_graded_30": 3,
+      "hits_30": 0,
+      "hit_rate_30": 0.0,
+      "avg_excess_30": -0.1248,
+      "best_call": {
+        "ticker": "NBIS",
+        "date": "2026-07-02",
+        "direction": "bullish",
+        "excess_30": -0.0314
+      },
+      "worst_call": {
+        "ticker": "NBIS",
+        "date": "2026-06-13",
+        "direction": "bullish",
+        "excess_30": -0.1831
+      },
+      "ranked": false
+    },
+    "x/@jake__wujastyk": {
+      "n_calls": 1,
+      "n_graded_7": 1,
+      "hits_7": 0,
+      "hit_rate_7": 0.0,
+      "avg_excess_7": -0.0845,
+      "n_graded_30": 0,
+      "hits_30": 0,
+      "hit_rate_30": null,
+      "avg_excess_30": null,
+      "best_call": null,
+      "worst_call": null,
+      "ranked": false
+    },
+    "x/@jiahanjimliu": {
+      "n_calls": 2,
+      "n_graded_7": 2,
+      "hits_7": 0,
+      "hit_rate_7": 0.0,
+      "avg_excess_7": -0.0765,
+      "n_graded_30": 1,
+      "hits_30": 0,
+      "hit_rate_30": 0.0,
+      "avg_excess_30": -0.2608,
+      "best_call": {
+        "ticker": "IREN",
+        "date": "2026-06-28",
+        "direction": "bullish",
+        "excess_30": -0.2608
+      },
+      "worst_call": {
+        "ticker": "IREN",
+        "date": "2026-06-28",
+        "direction": "bullish",
+        "excess_30": -0.2608
+      },
+      "ranked": false
+    },
+    "x/@jp_money_95630": {
+      "n_calls": 2,
+      "n_graded_7": 1,
+      "hits_7": 1,
+      "hit_rate_7": 1.0,
+      "avg_excess_7": 0.1314,
+      "n_graded_30": 0,
+      "hits_30": 0,
+      "hit_rate_30": null,
+      "avg_excess_30": null,
+      "best_call": null,
+      "worst_call": null,
+      "ranked": false
+    },
+    "x/@leaderinvests": {
+      "n_calls": 9,
+      "n_graded_7": 5,
+      "hits_7": 1,
+      "hit_rate_7": 0.2,
+      "avg_excess_7": -0.0766,
+      "n_graded_30": 1,
+      "hits_30": 1,
+      "hit_rate_30": 1.0,
+      "avg_excess_30": 0.1522,
+      "best_call": {
+        "ticker": "IREN",
+        "date": "2026-07-01",
+        "direction": "bearish",
+        "excess_30": 0.1522
+      },
+      "worst_call": {
+        "ticker": "IREN",
+        "date": "2026-07-01",
+        "direction": "bearish",
+        "excess_30": 0.1522
+      },
+      "ranked": false
+    },
+    "x/@marketmaestro1": {
+      "n_calls": 6,
+      "n_graded_7": 3,
+      "hits_7": 2,
+      "hit_rate_7": 0.667,
+      "avg_excess_7": -0.0035,
+      "n_graded_30": 2,
+      "hits_30": 1,
+      "hit_rate_30": 0.5,
+      "avg_excess_30": 0.065,
+      "best_call": {
+        "ticker": "IREN",
+        "date": "2026-06-30",
+        "direction": "bearish",
+        "excess_30": 0.1565
+      },
+      "worst_call": {
+        "ticker": "PGY",
+        "date": "2026-06-30",
+        "direction": "bullish",
+        "excess_30": -0.0266
+      },
+      "ranked": false
+    },
+    "x/@markosaaig": {
+      "n_calls": 2,
+      "n_graded_7": 1,
+      "hits_7": 0,
+      "hit_rate_7": 0.0,
+      "avg_excess_7": -0.243,
+      "n_graded_30": 0,
+      "hits_30": 0,
+      "hit_rate_30": null,
+      "avg_excess_30": null,
+      "best_call": null,
+      "worst_call": null,
+      "ranked": false
+    },
+    "x/@mentoviax": {
+      "n_calls": 18,
+      "n_graded_7": 10,
+      "hits_7": 8,
+      "hit_rate_7": 0.8,
+      "avg_excess_7": 0.0665,
+      "n_graded_30": 3,
+      "hits_30": 1,
+      "hit_rate_30": 0.333,
+      "avg_excess_30": -0.0141,
+      "best_call": {
+        "ticker": "MU",
+        "date": "2026-07-02",
+        "direction": "bearish",
+        "excess_30": 0.167
+      },
+      "worst_call": {
+        "ticker": "TSLA",
+        "date": "2026-06-26",
+        "direction": "bullish",
+        "excess_30": -0.1995
+      },
+      "ranked": false
+    },
+    "x/@michaelwigginso": {
+      "n_calls": 5,
+      "n_graded_7": 3,
+      "hits_7": 1,
+      "hit_rate_7": 0.333,
+      "avg_excess_7": -0.0015,
+      "n_graded_30": 1,
+      "hits_30": 1,
+      "hit_rate_30": 1.0,
+      "avg_excess_30": 0.0886,
+      "best_call": {
+        "ticker": "RDDT",
+        "date": "2026-06-17",
+        "direction": "bullish",
+        "excess_30": 0.0886
+      },
+      "worst_call": {
+        "ticker": "RDDT",
+        "date": "2026-06-17",
+        "direction": "bullish",
+        "excess_30": 0.0886
+      },
+      "ranked": false
+    },
+    "x/@mind1nvestor": {
+      "n_calls": 3,
+      "n_graded_7": 3,
+      "hits_7": 2,
+      "hit_rate_7": 0.667,
+      "avg_excess_7": 0.0079,
+      "n_graded_30": 0,
+      "hits_30": 0,
+      "hit_rate_30": null,
+      "avg_excess_30": null,
+      "best_call": null,
+      "worst_call": null,
+      "ranked": false
+    },
+    "x/@mvcinvesting": {
+      "n_calls": 4,
+      "n_graded_7": 4,
+      "hits_7": 1,
+      "hit_rate_7": 0.25,
+      "avg_excess_7": -0.098,
+      "n_graded_30": 2,
+      "hits_30": 0,
+      "hit_rate_30": 0.0,
+      "avg_excess_30": -0.0362,
+      "best_call": {
+        "ticker": "OMDA",
+        "date": "2026-06-26",
+        "direction": "bullish",
+        "excess_30": -0.0287
+      },
+      "worst_call": {
+        "ticker": "RKLB",
+        "date": "2026-07-08",
+        "direction": "bullish",
+        "excess_30": -0.0436
+      },
+      "ranked": false
+    },
+    "x/@pdicarlotrader": {
+      "n_calls": 18,
+      "n_graded_7": 12,
+      "hits_7": 4,
+      "hit_rate_7": 0.333,
+      "avg_excess_7": 0.0046,
+      "n_graded_30": 1,
+      "hits_30": 1,
+      "hit_rate_30": 1.0,
+      "avg_excess_30": 0.015,
+      "best_call": {
+        "ticker": "CRWV",
+        "date": "2026-07-06",
+        "direction": "bullish",
+        "excess_30": 0.015
+      },
+      "worst_call": {
+        "ticker": "CRWV",
+        "date": "2026-07-06",
+        "direction": "bullish",
+        "excess_30": 0.015
+      },
+      "ranked": false
+    },
+    "x/@retail_mourinho": {
+      "n_calls": 5,
+      "n_graded_7": 4,
+      "hits_7": 0,
+      "hit_rate_7": 0.0,
+      "avg_excess_7": -0.0882,
+      "n_graded_30": 3,
+      "hits_30": 1,
+      "hit_rate_30": 0.333,
+      "avg_excess_30": -0.1323,
+      "best_call": {
+        "ticker": "AAOI",
+        "date": "2026-07-06",
+        "direction": "bullish",
+        "excess_30": 0.0175
+      },
+      "worst_call": {
+        "ticker": "ASTS",
+        "date": "2026-06-30",
+        "direction": "bullish",
+        "excess_30": -0.3355
+      },
+      "ranked": false
+    },
+    "x/@rjccapital": {
+      "n_calls": 3,
+      "n_graded_7": 1,
+      "hits_7": 0,
+      "hit_rate_7": 0.0,
+      "avg_excess_7": -0.0932,
+      "n_graded_30": 0,
+      "hits_30": 0,
+      "hit_rate_30": null,
+      "avg_excess_30": null,
+      "best_call": null,
+      "worst_call": null,
+      "ranked": false
+    },
+    "x/@sam_badawi": {
+      "n_calls": 1,
+      "n_graded_7": 1,
+      "hits_7": 1,
+      "hit_rate_7": 1.0,
+      "avg_excess_7": 0.0123,
+      "n_graded_30": 0,
+      "hits_30": 0,
+      "hit_rate_30": null,
+      "avg_excess_30": null,
+      "best_call": null,
+      "worst_call": null,
+      "ranked": false
+    },
+    "x/@sunxliao": {
+      "n_calls": 7,
+      "n_graded_7": 6,
+      "hits_7": 2,
+      "hit_rate_7": 0.333,
+      "avg_excess_7": -0.0454,
+      "n_graded_30": 2,
+      "hits_30": 0,
+      "hit_rate_30": 0.0,
+      "avg_excess_30": -0.2233,
+      "best_call": {
+        "ticker": "QQQ",
+        "date": "2026-07-03",
+        "direction": "bullish",
+        "excess_30": -0.04
+      },
+      "worst_call": {
+        "ticker": "VPG",
+        "date": "2026-06-30",
+        "direction": "bullish",
+        "excess_30": -0.4067
+      },
+      "ranked": false
+    },
+    "x/@tempocap2": {
+      "n_calls": 1,
+      "n_graded_7": 1,
+      "hits_7": 0,
+      "hit_rate_7": 0.0,
+      "avg_excess_7": -0.0932,
+      "n_graded_30": 0,
+      "hits_30": 0,
+      "hit_rate_30": null,
+      "avg_excess_30": null,
+      "best_call": null,
+      "worst_call": null,
+      "ranked": false
+    },
+    "x/@thelonginvest": {
+      "n_calls": 14,
+      "n_graded_7": 9,
+      "hits_7": 5,
+      "hit_rate_7": 0.556,
+      "avg_excess_7": -0.018,
+      "n_graded_30": 3,
+      "hits_30": 2,
+      "hit_rate_30": 0.667,
+      "avg_excess_30": -0.0646,
+      "best_call": {
+        "ticker": "ETH",
+        "date": "2026-06-29",
+        "direction": "bullish",
+        "excess_30": 0.2008
+      },
+      "worst_call": {
+        "ticker": "GRRR",
+        "date": "2026-06-30",
+        "direction": "bullish",
+        "excess_30": -0.4162
+      },
+      "ranked": false
+    },
+    "x/@theronnievshow": {
+      "n_calls": 14,
+      "n_graded_7": 11,
+      "hits_7": 5,
+      "hit_rate_7": 0.455,
+      "avg_excess_7": 0.0147,
+      "n_graded_30": 3,
+      "hits_30": 2,
+      "hit_rate_30": 0.667,
+      "avg_excess_30": -0.0104,
+      "best_call": {
+        "ticker": "HOOD",
+        "date": "2026-07-04",
+        "direction": "bearish",
+        "excess_30": 0.24
+      },
+      "worst_call": {
+        "ticker": "MU",
+        "date": "2026-06-29",
+        "direction": "bullish",
+        "excess_30": -0.3392
+      },
+      "ranked": false
+    },
+    "x/@theswingtraderr": {
+      "n_calls": 1,
+      "n_graded_7": 1,
+      "hits_7": 1,
+      "hit_rate_7": 1.0,
+      "avg_excess_7": -0.0028,
+      "n_graded_30": 1,
+      "hits_30": 1,
+      "hit_rate_30": 1.0,
+      "avg_excess_30": 0.0781,
+      "best_call": {
+        "ticker": "TSLA",
+        "date": "2026-04-07",
+        "direction": "bullish",
+        "excess_30": 0.0781
+      },
+      "worst_call": {
+        "ticker": "TSLA",
+        "date": "2026-04-07",
+        "direction": "bullish",
+        "excess_30": 0.0781
+      },
+      "ranked": false
+    },
+    "x/@tjthewheeldeal": {
+      "n_calls": 4,
+      "n_graded_7": 3,
+      "hits_7": 2,
+      "hit_rate_7": 0.667,
+      "avg_excess_7": 0.03,
+      "n_graded_30": 2,
+      "hits_30": 1,
+      "hit_rate_30": 0.5,
+      "avg_excess_30": 0.149,
+      "best_call": {
+        "ticker": "BMNR",
+        "date": "2026-06-30",
+        "direction": "bullish",
+        "excess_30": 0.3652
+      },
+      "worst_call": {
+        "ticker": "MSTR",
+        "date": "2026-07-04",
+        "direction": "bullish",
+        "excess_30": -0.0672
+      },
+      "ranked": false
+    },
+    "x/@tomstockslab": {
+      "n_calls": 1,
+      "n_graded_7": 1,
+      "hits_7": 1,
+      "hit_rate_7": 1.0,
+      "avg_excess_7": 0.0531,
+      "n_graded_30": 1,
+      "hits_30": 1,
+      "hit_rate_30": 1.0,
+      "avg_excess_30": 0.0565,
+      "best_call": {
+        "ticker": "META",
+        "date": "2026-06-29",
+        "direction": "bullish",
+        "excess_30": 0.0565
+      },
+      "worst_call": {
+        "ticker": "META",
+        "date": "2026-06-29",
+        "direction": "bullish",
+        "excess_30": 0.0565
+      },
+      "ranked": false
+    },
+    "x/@traderc0bb": {
+      "n_calls": 2,
+      "n_graded_7": 2,
+      "hits_7": 0,
+      "hit_rate_7": 0.0,
+      "avg_excess_7": -0.1031,
+      "n_graded_30": 2,
+      "hits_30": 1,
+      "hit_rate_30": 0.5,
+      "avg_excess_30": -0.0581,
+      "best_call": {
+        "ticker": "RDDT",
+        "date": "2026-06-09",
+        "direction": "bullish",
+        "excess_30": 0.1048
+      },
+      "worst_call": {
+        "ticker": "RKLB",
+        "date": "2026-07-06",
+        "direction": "bullish",
+        "excess_30": -0.2209
+      },
+      "ranked": false
+    },
+    "x/@triggertrades": {
+      "n_calls": 10,
+      "n_graded_7": 9,
+      "hits_7": 4,
+      "hit_rate_7": 0.444,
+      "avg_excess_7": 0.0003,
+      "n_graded_30": 5,
+      "hits_30": 2,
+      "hit_rate_30": 0.4,
+      "avg_excess_30": -0.0009,
+      "best_call": {
+        "ticker": "SPX",
+        "date": "2026-06-11",
+        "direction": "bullish",
+        "excess_30": 0.0009
+      },
+      "worst_call": {
+        "ticker": "SPX",
+        "date": "2026-06-08",
+        "direction": "bearish",
+        "excess_30": -0.002
+      },
+      "ranked": true
+    },
+    "x/@wliang": {
+      "n_calls": 2,
+      "n_graded_7": 2,
+      "hits_7": 0,
+      "hit_rate_7": 0.0,
+      "avg_excess_7": -0.0416,
+      "n_graded_30": 0,
+      "hits_30": 0,
+      "hit_rate_30": null,
+      "avg_excess_30": null,
+      "best_call": null,
+      "worst_call": null,
+      "ranked": false
+    },
+    "x/@yianisz": {
+      "n_calls": 2,
+      "n_graded_7": 1,
+      "hits_7": 1,
+      "hit_rate_7": 1.0,
+      "avg_excess_7": -0.0131,
+      "n_graded_30": 1,
+      "hits_30": 0,
+      "hit_rate_30": 0.0,
+      "avg_excess_30": -0.2465,
+      "best_call": {
+        "ticker": "AAOI",
+        "date": "2026-06-23",
+        "direction": "bullish",
+        "excess_30": -0.2465
+      },
+      "worst_call": {
+        "ticker": "AAOI",
+        "date": "2026-06-23",
+        "direction": "bullish",
+        "excess_30": -0.2465
+      },
+      "ranked": false
+    },
+    "x/@zastocks": {
+      "n_calls": 1,
+      "n_graded_7": 0,
+      "hits_7": 0,
+      "hit_rate_7": null,
+      "avg_excess_7": null,
+      "n_graded_30": 0,
+      "hits_30": 0,
+      "hit_rate_30": null,
+      "avg_excess_30": null,
+      "best_call": null,
+      "worst_call": null,
+      "ranked": false
+    },
+    "youtube/@ARKInvest2015": {
+      "n_calls": 13,
+      "n_graded_7": 9,
+      "hits_7": 5,
+      "hit_rate_7": 0.556,
+      "avg_excess_7": 0.012,
+      "n_graded_30": 3,
+      "hits_30": 1,
+      "hit_rate_30": 0.333,
+      "avg_excess_30": -0.0441,
+      "best_call": {
+        "ticker": "BTC",
+        "date": "2026-07-02",
+        "direction": "bullish",
+        "excess_30": 0.0035
+      },
+      "worst_call": {
+        "ticker": "USD",
+        "date": "2026-07-02",
+        "direction": "bullish",
+        "excess_30": -0.088
+      },
+      "ranked": false
+    },
+    "youtube/@CouchInvestor": {
+      "n_calls": 46,
+      "n_graded_7": 28,
+      "hits_7": 19,
+      "hit_rate_7": 0.679,
+      "avg_excess_7": 0.0291,
+      "n_graded_30": 7,
+      "hits_30": 5,
+      "hit_rate_30": 0.714,
+      "avg_excess_30": 0.0066,
+      "best_call": {
+        "ticker": "MU",
+        "date": "2026-06-29",
+        "direction": "bearish",
+        "excess_30": 0.3392
+      },
+      "worst_call": {
+        "ticker": "RKLB",
+        "date": "2026-06-29",
+        "direction": "bullish",
+        "excess_30": -0.3865
+      },
+      "ranked": true
+    },
+    "youtube/@EndicottInvests": {
+      "n_calls": 23,
+      "n_graded_7": 15,
+      "hits_7": 8,
+      "hit_rate_7": 0.533,
+      "avg_excess_7": 0.0249,
+      "n_graded_30": 4,
+      "hits_30": 2,
+      "hit_rate_30": 0.5,
+      "avg_excess_30": -0.0287,
+      "best_call": {
+        "ticker": "NVDA",
+        "date": "2026-07-06",
+        "direction": "bullish",
+        "excess_30": 0.0964
+      },
+      "worst_call": {
+        "ticker": "NBIS",
+        "date": "2026-07-01",
+        "direction": "bullish",
+        "excess_30": -0.1709
+      },
+      "ranked": false
+    },
+    "youtube/@Fundstrat_Direct": {
+      "n_calls": 13,
+      "n_graded_7": 13,
+      "hits_7": 5,
+      "hit_rate_7": 0.385,
+      "avg_excess_7": -0.0335,
+      "n_graded_30": 4,
+      "hits_30": 2,
+      "hit_rate_30": 0.5,
+      "avg_excess_30": -0.0741,
+      "best_call": {
+        "ticker": "NVDA",
+        "date": "2026-07-02",
+        "direction": "bullish",
+        "excess_30": 0.0433
+      },
+      "worst_call": {
+        "ticker": "MSFT",
+        "date": "2026-07-01",
+        "direction": "bearish",
+        "excess_30": -0.2076
+      },
+      "ranked": false
+    },
+    "youtube/@Funofinvesting": {
+      "n_calls": 16,
+      "n_graded_7": 12,
+      "hits_7": 4,
+      "hit_rate_7": 0.333,
+      "avg_excess_7": -0.0052,
+      "n_graded_30": 8,
+      "hits_30": 3,
+      "hit_rate_30": 0.375,
+      "avg_excess_30": -0.0311,
+      "best_call": {
+        "ticker": "NOW",
+        "date": "2026-06-29",
+        "direction": "bullish",
+        "excess_30": 0.1735
+      },
+      "worst_call": {
+        "ticker": "HOOD",
+        "date": "2026-07-07",
+        "direction": "bullish",
+        "excess_30": -0.2244
+      },
+      "ranked": true
+    },
+    "youtube/@TheRonnieVShow": {
+      "n_calls": 15,
+      "n_graded_7": 9,
+      "hits_7": 3,
+      "hit_rate_7": 0.333,
+      "avg_excess_7": -0.0127,
+      "n_graded_30": 5,
+      "hits_30": 4,
+      "hit_rate_30": 0.8,
+      "avg_excess_30": 0.0403,
+      "best_call": {
+        "ticker": "PLTR",
+        "date": "2026-07-06",
+        "direction": "bullish",
+        "excess_30": 0.1707
+      },
+      "worst_call": {
+        "ticker": "HOOD",
+        "date": "2026-07-01",
+        "direction": "bullish",
+        "excess_30": -0.205
+      },
+      "ranked": true
+    },
+    "youtube/@TimothySykesTrader": {
+      "n_calls": 6,
+      "n_graded_7": 4,
+      "hits_7": 1,
+      "hit_rate_7": 0.25,
+      "avg_excess_7": -0.1301,
+      "n_graded_30": 1,
+      "hits_30": 1,
+      "hit_rate_30": 1.0,
+      "avg_excess_30": 0.0517,
+      "best_call": {
+        "ticker": "TURB",
+        "date": "2026-07-06",
+        "direction": "bearish",
+        "excess_30": 0.0517
+      },
+      "worst_call": {
+        "ticker": "TURB",
+        "date": "2026-07-06",
+        "direction": "bearish",
+        "excess_30": 0.0517
+      },
+      "ranked": false
+    },
+    "youtube/@amitinvesting": {
+      "n_calls": 84,
+      "n_graded_7": 70,
+      "hits_7": 30,
+      "hit_rate_7": 0.429,
+      "avg_excess_7": -0.0171,
+      "n_graded_30": 31,
+      "hits_30": 16,
+      "hit_rate_30": 0.516,
+      "avg_excess_30": 0.0269,
+      "best_call": {
+        "ticker": "CRWV",
+        "date": "2026-06-26",
+        "direction": "bearish",
+        "excess_30": 0.2809
+      },
+      "worst_call": {
+        "ticker": "SNDK",
+        "date": "2026-06-30",
+        "direction": "bullish",
+        "excess_30": -0.4303
+      },
+      "ranked": true
+    },
+    "youtube/@papergainsinc": {
+      "n_calls": 34,
+      "n_graded_7": 32,
+      "hits_7": 13,
+      "hit_rate_7": 0.406,
+      "avg_excess_7": -0.0333,
+      "n_graded_30": 14,
+      "hits_30": 3,
+      "hit_rate_30": 0.214,
+      "avg_excess_30": -0.1774,
+      "best_call": {
+        "ticker": "BA",
+        "date": "2026-07-06",
+        "direction": "bullish",
+        "excess_30": -0.0005
+      },
+      "worst_call": {
+        "ticker": "GLW",
+        "date": "2026-06-30",
+        "direction": "bullish",
+        "excess_30": -0.4638
+      },
+      "ranked": true
+    },
+    "youtube/@stevenfiorillo1": {
+      "n_calls": 127,
+      "n_graded_7": 97,
+      "hits_7": 51,
+      "hit_rate_7": 0.526,
+      "avg_excess_7": 0.0081,
+      "n_graded_30": 44,
+      "hits_30": 20,
+      "hit_rate_30": 0.455,
+      "avg_excess_30": -0.0278,
+      "best_call": {
+        "ticker": "MSFT",
+        "date": "2026-07-07",
+        "direction": "bullish",
+        "excess_30": 0.2576
+      },
+      "worst_call": {
+        "ticker": "WOLF",
+        "date": "2026-07-06",
+        "direction": "bullish",
+        "excess_30": -0.3864
+      },
+      "ranked": true
+    },
+    "youtube/@wolf_financial": {
+      "n_calls": 51,
+      "n_graded_7": 38,
+      "hits_7": 15,
+      "hit_rate_7": 0.395,
+      "avg_excess_7": -0.0076,
+      "n_graded_30": 24,
+      "hits_30": 18,
+      "hit_rate_30": 0.75,
+      "avg_excess_30": 0.0992,
+      "best_call": {
+        "ticker": "KORU",
+        "date": "2026-07-03",
+        "direction": "bearish",
+        "excess_30": 0.5004
+      },
+      "worst_call": {
+        "ticker": "RBRK",
+        "date": "2026-07-03",
+        "direction": "bullish",
+        "excess_30": -0.153
+      },
+      "ranked": true
+    }
+  }
+}
