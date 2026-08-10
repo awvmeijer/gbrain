@@ -1,0 +1,78 @@
+/* Streamlined mobile app — low-noise, big type, native-feeling. */
+
+.mobile-shell { display: flex; flex-direction: column; min-height: 100vh; background: var(--page); padding-top: env(safe-area-inset-top); }
+.mtopbar { display: flex; align-items: center; gap: 8px; padding: 10px 16px; border-bottom: 1px solid var(--hl); background: var(--pane); position: sticky; top: 0; z-index: 20; }
+.mmain { flex: 1; overflow: auto; padding-bottom: calc(96px + env(safe-area-inset-bottom)); }
+.mscreen { padding: 16px 16px 8px; max-width: 640px; margin: 0 auto; }
+
+/* today */
+.mtoday-date { font-family: var(--f-display); font-size: 34px; line-height: 1.02; margin: 8px 0 16px; }
+/* long digest bullets read better as left-aligned cards than 999px ovals on a phone */
+.mscreen .stadiums { gap: 8px; margin-bottom: 18px; }
+.mscreen .stadium { border-radius: 14px; align-items: flex-start; padding: 12px 15px; font-size: 13.5px; line-height: 1.45; color: var(--t-body); }
+.mscreen .stadium .arr { padding-top: 1px; }
+.mkpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 16px; }
+.mkpis .kpiblock { padding: 12px; }
+.mkpis .kpival { font-size: 24px; }
+.needcta { display: flex; align-items: center; gap: 12px; width: 100%; background: var(--azure-wash); border: 1px solid var(--azure); border-radius: 12px; padding: 13px 16px; color: var(--t-display); font: 500 14px 'Geist', sans-serif; margin-bottom: 16px; cursor: pointer; }
+.needcta .arr { color: var(--azure); font-family: 'Geist Mono', monospace; }
+.needcta .mono { margin-left: auto; font-size: 11px; text-transform: uppercase; color: var(--azure); }
+
+/* bottom tabs */
+.bottomtabs { position: fixed; left: 12px; right: 12px; bottom: calc(12px + env(safe-area-inset-bottom)); display: flex; justify-content: space-around; align-items: center; padding: 9px 6px; background: var(--pane); border: 1px solid var(--hls); border-radius: 999px; z-index: 30; box-shadow: 0 8px 30px rgba(0,0,0,0.35); }
+.btab { background: none; border: none; display: flex; flex-direction: column; align-items: center; gap: 4px; color: var(--t-mut); font: 500 11px 'Geist Mono', monospace; text-transform: uppercase; letter-spacing: 0.05em; cursor: pointer; padding: 2px 6px; }
+.btab.on { color: var(--t-display); }
+.btab-label { position: relative; }
+.btab-dot { width: 4px; height: 4px; border-radius: 50%; background: transparent; }
+.btab.on .btab-dot { background: var(--azure); }
+.badge { position: absolute; top: -6px; right: -12px; background: var(--warn); color: #111; font-size: 9px; border-radius: 999px; padding: 0 4px; line-height: 14px; }
+
+/* swipe card stack */
+.cardstack { position: relative; height: 380px; margin: 14px 0; }
+.swipecard { position: absolute; inset: 0; background: var(--pane); border: 1px solid var(--hls); border-radius: 18px; padding: 18px; display: flex; flex-direction: column; gap: 10px; }
+.swipecard.top { box-shadow: 0 10px 30px rgba(0,0,0,0.28); cursor: grab; touch-action: pan-y; }
+.swipecard.top:active { cursor: grabbing; }
+.swipecard.approve { border-color: var(--mint); }
+.swipecard.reject { border-color: var(--error); }
+.swipetop { display: flex; align-items: center; justify-content: space-between; }
+.swipetitle { font-size: 22px; line-height: 1.1; font-family: var(--f-display); }
+.swipewhy { font-size: 14px; color: var(--t-sec); line-height: 1.5; }
+.swipehints { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; font-family: 'Geist Mono', monospace; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--t-mut); }
+.swipehints button { background: none; border: 1px solid var(--hl); border-radius: 999px; padding: 8px 14px; color: var(--t-body); font: inherit; cursor: pointer; }
+.swipehints button.approve { color: var(--mint); border-color: rgba(46,230,166,0.4); }
+.swipehints button:disabled { opacity: 0.4; }
+
+/* decision log */
+.declog { margin-top: 20px; }
+.declog-row { display: flex; gap: 12px; align-items: baseline; padding: 6px 0; border-top: 1px solid var(--hl); font-size: 13px; }
+.declog-row .mono { font-size: 10px; letter-spacing: 0.06em; }
+.declog-row .ok { color: var(--azure-bright); } .declog-row .mut { color: var(--t-mut); }
+
+/* search */
+.mfield { width: 100%; margin: 8px 0 14px; padding: 12px; font-size: 15px; border-radius: 10px; }
+.mresults { display: flex; flex-direction: column; gap: 8px; }
+.mresult { text-align: left; background: var(--pane); border: 1px solid var(--hl); border-radius: 12px; padding: 12px 14px; cursor: pointer; }
+.mresult-top { display: flex; justify-content: space-between; margin-bottom: 4px; }
+.mresult-src { font-size: 10px; color: var(--t-mut); text-transform: uppercase; }
+.mresult-txt { font-size: 13.5px; color: var(--t-body); line-height: 1.45; }
+
+/* capture */
+.mcap { min-height: 140px; font-size: 15px; }
+.mcaprow { display: flex; gap: 8px; margin-top: 12px; }
+.mcaprow .btn { flex: 1; justify-content: center; padding: 13px; }
+.btn.recon { background: var(--mint); border-color: var(--mint); color: #111; }
+.mphoto { position: relative; overflow: hidden; }
+.mphoto input { position: absolute; inset: 0; opacity: 0; }
+
+/* more / settings */
+.mmore-h { font-family: var(--f-display); font-size: 30px; line-height: 1.05; margin: 8px 0 16px; }
+.morelist { display: flex; flex-direction: column; border-top: 1px solid var(--hl); }
+.morerow { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; background: none; border: none; border-bottom: 1px solid var(--hl); padding: 13px 2px; color: var(--t-body); font: 15px 'Geist', sans-serif; cursor: pointer; }
+.morerow:disabled { cursor: default; }
+.morerow .arr { color: var(--t-mut); font-family: 'Geist Mono', monospace; }
+.morelabel { flex: 1; }
+.moremeta { font-size: 11px; color: var(--t-sec); text-transform: uppercase; letter-spacing: 0.05em; }
+.moremeta.ok { color: var(--mint); }
+
+/* on true-desktop widths, keep the mobile shell readable if ever shown */
+@media (min-width: 900px) { .mscreen { max-width: 720px; } }

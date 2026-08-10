@@ -1,0 +1,15 @@
+{
+  "name": "BRAINS/",
+  "short_name": "BRAINS",
+  "description": "Your local knowledge brain — digest, needs-you, search, capture.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#111213",
+  "theme_color": "#111213",
+  "icons": [
+    { "src": "/brand/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/brand/avatar-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

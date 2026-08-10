@@ -1,0 +1,38 @@
+/* The persistent AI-agent surface — dock (desktop) + FAB/sheet (mobile). */
+
+/* desktop docked ask bar (collapsed) */
+.agentdockbar { position: fixed; left: 50%; transform: translateX(-50%); bottom: 40px; display: flex; align-items: center; gap: 10px; background: var(--pane); border: 1px solid var(--hls); border-radius: 999px; padding: 8px 10px 8px 12px; color: var(--t-sec); cursor: pointer; z-index: 40; box-shadow: 0 10px 34px rgba(0,0,0,0.4); font-size: 13px; }
+.agentdockbar:hover { border-color: var(--azure); }
+.agentdockbar .mono { font-family: 'Geist Mono', monospace; font-size: 12px; }
+.agentdockbar .kbd { font-family: 'Geist Mono', monospace; font-size: 10px; color: var(--t-mut); border: 1px solid var(--hl); border-radius: 4px; padding: 1px 5px; }
+
+/* desktop expanded dock */
+.agentdock { position: fixed; left: 50%; transform: translateX(-50%); bottom: 24px; width: min(720px, 94vw); z-index: 45; }
+.agentdock .agentpanel { box-shadow: 0 20px 60px rgba(0,0,0,0.5); }
+
+/* mobile FAB + sheet */
+.agentfab { position: fixed; right: 18px; bottom: calc(88px + env(safe-area-inset-bottom)); width: 56px; height: 56px; border-radius: 50%; background: var(--pane); border: 1px solid var(--hls); display: grid; place-items: center; z-index: 35; box-shadow: 0 8px 26px rgba(0,0,0,0.4); cursor: pointer; }
+.agentfab.hide { display: none; }
+.agentsheet { position: fixed; inset: 0; background: var(--page); z-index: 50; display: flex; flex-direction: column; padding-top: env(safe-area-inset-top); animation: brains-rise var(--motion-med) var(--bm-ease); }
+.agentsheet .agentpanel { flex: 1; border: none; border-radius: 0; }
+
+/* the panel itself */
+.agentpanel { display: flex; flex-direction: column; background: var(--pane); border: 1px solid var(--hls); border-radius: 16px; overflow: hidden; max-height: 72vh; }
+.agenthead { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--hl); }
+.agentx { background: none; border: none; color: var(--t-mut); font-size: 14px; cursor: pointer; font-family: 'Geist Mono', monospace; }
+.agentx:hover { color: var(--t-body); }
+.agentbody { flex: 1; overflow: auto; padding: 14px; min-height: 120px; }
+.agenthint { font-size: 13px; line-height: 1.5; }
+.ask-answer { font-size: 14px; line-height: 1.6; color: var(--t-body); white-space: pre-wrap; }
+.ask-answer .md { white-space: normal; }
+.grounding { margin-top: 16px; }
+.grounding .chips { margin-top: 8px; }
+.agentpage { }
+.agentinput { display: flex; gap: 8px; padding: 12px 14px; border-top: 1px solid var(--hl); align-items: center; }
+.agentinput .field { flex: 1; }
+.fasttoggle { background: none; border: 1px solid var(--hl); border-radius: 4px; color: var(--t-mut); font-family: 'Geist Mono', monospace; font-size: 10px; text-transform: uppercase; padding: 6px 8px; cursor: pointer; }
+.fasttoggle.on { color: var(--mint); border-color: rgba(46,230,166,0.4); }
+
+/* page modal (grounding chip / graph node → read page) */
+.pagemodal { width: min(680px, 94vw); max-height: 80vh; display: flex; flex-direction: column; border-radius: 14px; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,0.5); }
+.pagemodal-body { overflow: auto; padding: 16px; }

@@ -1,0 +1,111 @@
+/* Desktop console layout + shared primitives. Consumes tokens.css vars. */
+
+/* ---------- shells ---------- */
+.desktop-shell { display: flex; flex-direction: column; height: 100vh; background: var(--page); }
+.deskmain { flex: 1; overflow: auto; }
+.brandlock { display: inline-flex; align-items: center; gap: 9px; }
+
+/* keygate */
+.keygate { height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; text-align: center; padding: 24px; }
+.keygate h1 { margin: 6px 0 0; }
+
+/* ---------- top rail ---------- */
+.toprail { display: flex; align-items: center; justify-content: space-between; padding: 12px 22px; border-bottom: 1px solid var(--hl); background: var(--pane); flex: none; }
+.toprail-l { display: flex; align-items: center; gap: 22px; }
+.railnav { display: flex; gap: 4px; }
+.railtab { background: none; border: none; border-bottom: 2px solid transparent; color: var(--t-sec); font: 500 13px 'Geist', sans-serif; padding: 6px 12px; cursor: pointer; transition: color var(--motion-fast) ease-out; }
+.railtab:hover { color: var(--t-body); }
+.railtab.on { color: var(--t-display); border-bottom-color: var(--azure); }
+.toprail-r { display: flex; align-items: center; gap: 8px; }
+.chipbtn { background: none; border: 1px solid var(--hl); border-radius: 4px; color: var(--t-sec); font-family: 'Geist Mono', monospace; font-size: 11px; padding: 5px 9px; cursor: pointer; transition: background var(--motion-fast) ease-out, color var(--motion-fast) ease-out; }
+.chipbtn:hover { background: var(--elev); color: var(--t-body); }
+
+/* ---------- HUD footer ---------- */
+.hud { display: flex; gap: 22px; align-items: center; padding: 7px 22px; border-top: 1px solid var(--hl); background: var(--pane); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--t-mut); flex: none; overflow-x: auto; }
+.hud-item b { color: var(--t-body); font-weight: 500; }
+.hud .verdict { border: none; padding: 0; }
+
+/* ---------- view container ---------- */
+.view { max-width: 1180px; margin: 0 auto; padding: 22px 22px 40px; }
+.empty { padding: 22px 4px; }
+
+/* ---------- KPI ---------- */
+.kpi-strip { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 18px; }
+.kpi-strip.wide { grid-template-columns: repeat(5, 1fr); }
+.kpiblock { background: var(--pane); border: 1px solid var(--hl); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 6px; }
+.kpival { font-size: 30px; line-height: 1; }
+
+/* ---------- Today ---------- */
+.today-hero { margin-bottom: 16px; }
+.today-date { font-family: var(--f-display); font-size: 30px; margin: 6px 0 0; }
+.stadiums { display: flex; flex-direction: column; gap: 8px; margin-bottom: 18px; }
+.today-grid { display: grid; grid-template-columns: 1.6fr 1fr; gap: 12px; align-items: start; }
+.recent-list { display: flex; flex-direction: column; }
+.recent-row { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-top: 1px solid var(--hl); font-size: 13px; }
+.recent-title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--t-body); }
+.recent-src { font-size: 10px; color: var(--t-mut); text-transform: uppercase; }
+.dot-src { width: 7px; height: 7px; border-radius: 50%; flex: none; }
+
+/* approvals */
+.approvals { margin-bottom: 18px; }
+.mhead { display: flex; align-items: center; justify-content: space-between; }
+.approve-list { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+.approve-row { display: flex; gap: 14px; align-items: center; justify-content: space-between; border-top: 1px solid var(--hl); padding-top: 10px; }
+.approve-meta { min-width: 0; }
+.approve-row .act { color: var(--azure); text-transform: uppercase; letter-spacing: 0.05em; font-size: 11px; }
+.approve-row .target { color: var(--t-sec); font-size: 11px; }
+.approve-why { font-size: 13px; color: var(--t-body); margin-top: 4px; }
+.approve-btns { display: flex; gap: 6px; flex: none; }
+
+/* ---------- Records (3-pane) ---------- */
+.records3 { display: grid; grid-template-columns: 220px 1fr 340px; gap: 0; max-width: none; height: 100%; padding: 0; }
+.records3 .rail { padding: 16px 18px; border-right: 1px solid var(--hl); overflow: auto; }
+.records3 .work { display: flex; flex-direction: column; min-width: 0; }
+.worktop { display: flex; align-items: center; padding: 14px 18px; border-bottom: 1px solid var(--hl); }
+.field.grow { flex: 1; }
+.field.grow.active { border-color: var(--azure); background: var(--azure-wash); }
+.tablewrap { flex: 1; overflow: auto; }
+.records3 .detail { border-left: 1px solid var(--hl); padding: 16px; overflow: auto; }
+
+/* ---------- Ops ---------- */
+.ops-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: start; }
+
+/* ---------- Graph ---------- */
+.graph { display: grid; grid-template-columns: 1fr 300px; gap: 0; max-width: none; height: 100%; padding: 0; }
+.graph-canvas { position: relative; overflow: hidden; cursor: grab; background: radial-gradient(circle at 50% 40%, var(--pane), var(--page)); }
+.graph-canvas:active { cursor: grabbing; }
+.gnode { cursor: pointer; transition: opacity var(--motion-fast) ease-out; }
+.gnode:hover { opacity: 1 !important; }
+.glabel { font-family: 'Geist Mono', monospace; font-size: 11px; fill: var(--t-sec); text-transform: uppercase; letter-spacing: 0.06em; }
+.ghalo { stroke: var(--mint); stroke-width: 1.5; stroke-dasharray: 4 4; transform-box: fill-box; transform-origin: center; animation: brains-halo-rot 20s linear infinite; }
+.graph-zoom { position: absolute; right: 14px; bottom: 14px; display: flex; flex-direction: column; gap: 6px; }
+.graph-panel { border-left: 1px solid var(--hl); padding: 18px; overflow: auto; }
+.ginput { background: var(--elev); border: 1px solid var(--hl); border-radius: 4px; color: var(--t-body); font-family: 'Geist Mono', monospace; font-size: 12px; padding: 7px 9px; outline: none; transition: border-color var(--motion-fast) ease-out; }
+.ginput:focus { border-color: var(--azure-bright); }
+.ginput::placeholder { color: var(--t-mut); }
+
+/* ---------- convergence findings (the 1+1=3 front door) ---------- */
+.findings { margin-bottom: 18px; }
+.finding-list { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+.finding-row { display: flex; align-items: center; gap: 14px; width: 100%; text-align: left; background: var(--elev); border: 1px solid var(--hls); border-radius: 999px; padding: 8px 18px; color: var(--t-body); cursor: pointer; font: inherit; transition: border-color var(--motion-fast) ease-out; }
+.finding-row:hover { border-color: var(--mint); }
+.finding-score { font-size: 16px; color: var(--mint); min-width: 42px; }
+.finding-ticker { font-family: var(--f-display); font-weight: 600; color: var(--t-display); font-size: 15px; }
+.finding-classes { font-size: 10px; color: var(--t-sec); flex: 1; text-transform: uppercase; letter-spacing: 0.05em; }
+.finding-row .arr { color: var(--t-mut); font-family: 'Geist Mono', monospace; }
+
+/* chips (shared) */
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--hl); border-radius: 4px; background: var(--pane); color: var(--t-body); font-family: 'Geist Mono', monospace; font-size: 11px; padding: 4px 9px; cursor: pointer; }
+.chip:hover { background: var(--elev); }
+.chip.off { opacity: 0.4; }
+
+/* ---------- command palette + key panel ---------- */
+.palette-scrim { position: fixed; inset: 0; background: rgba(0,0,0,0.42); display: flex; align-items: flex-start; justify-content: center; padding-top: 14vh; z-index: 60; animation: brains-fade 120ms ease-out; }
+.palette { width: min(560px, 92vw); background: var(--pane); border: 1px solid var(--hls); border-radius: 12px; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,0.45); }
+.palette-input { width: 100%; border: none; border-bottom: 1px solid var(--hl); background: none; color: var(--t-body); font: 15px 'Geist', sans-serif; padding: 14px 16px; outline: none; }
+.palette-list { max-height: 340px; overflow: auto; padding: 6px; }
+.palette-row { display: flex; align-items: center; justify-content: space-between; width: 100%; text-align: left; background: none; border: none; color: var(--t-body); font: 14px 'Geist', sans-serif; padding: 9px 10px; border-radius: 6px; cursor: pointer; }
+.palette-row.sel { background: var(--azure-wash); box-shadow: inset 2px 0 0 var(--azure); }
+.palette-hint { font-size: 10px; color: var(--t-mut); text-transform: uppercase; letter-spacing: 0.06em; }
+.keypanel { width: min(460px, 92vw); background: var(--pane); border: 1px solid var(--hls); border-radius: 12px; padding: 20px; box-shadow: 0 20px 60px rgba(0,0,0,0.45); }

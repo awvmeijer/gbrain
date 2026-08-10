@@ -19,6 +19,14 @@ body,
   --error: #cd4246;
   --grad-hero: linear-gradient(135deg, #2d8fe3 0%, #fdefd6 100%);
 
+  /* brand-mark + motion (from the brand kit) */
+  --bm-cycle: 5.6s;
+  --bm-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --motion-fast: 140ms;
+  --motion-med: 220ms;
+  --motion-ease: var(--bm-ease);
+  --f-display: 'Bricolage Grotesque', 'Geist', sans-serif;
+
   /* kind hues — dusty categorical */
   --k-person: #6e93b8;
   --k-agent: #63a89a;
@@ -44,7 +52,17 @@ body,
 }
 
 .brains-root[data-th='night'],
-.brains-root .ink {
+.brains-root .ink,
+.brains-root .kpiblock,
+.brains-root .agentpanel,
+.brains-root .agentdockbar,
+.brains-root .agentfab,
+.brains-root .palette,
+.brains-root .keypanel,
+.brains-root .pagemodal,
+.brains-root .swipecard,
+.brains-root .mresult,
+.brains-root .bottomtabs {
   --page: #111213;
   --pane: #1e2022;
   --elev: #25282b;
@@ -515,4 +533,90 @@ body,
 }
 .brains-root {
   scrollbar-width: none;
+}
+
+/* ---------- brand mark (DotMark) — the AI-agent avatar ---------- */
+.brains-root .dotmark {
+  display: inline-block;
+  line-height: 0;
+  flex: none;
+}
+.brains-root .dotmark svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+.brains-root .dotmark .d {
+  transition: opacity var(--motion-med) var(--motion-ease);
+}
+/* travelling wave across the 9-cell grid while the agent is thinking */
+@keyframes brains-dot-wave {
+  0%,
+  70%,
+  100% {
+    opacity: 0.22;
+  }
+  35% {
+    opacity: 1;
+  }
+}
+.brains-root .dotmark.thinking .d {
+  animation: brains-dot-wave var(--bm-cycle) var(--motion-ease) infinite;
+}
+.brains-root .dotmark.thinking .d.lit {
+  opacity: 1;
+}
+
+/* ---------- button / control micro-interactions ---------- */
+.brains-root .press {
+  transition:
+    transform var(--motion-fast) var(--motion-ease),
+    background var(--motion-fast) ease-out,
+    border-color var(--motion-fast) ease-out;
+}
+.brains-root .press:active {
+  transform: scale(0.97);
+}
+
+/* ---------- KPI count-up / streaming caret ---------- */
+@keyframes brains-caret {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+.brains-root .caret {
+  display: inline-block;
+  color: var(--mint);
+  animation: brains-caret 900ms steps(1) infinite;
+}
+
+/* ---------- card enter ---------- */
+@keyframes brains-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.brains-root .rise {
+  animation: brains-rise var(--motion-med) var(--motion-ease) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .brains-root .dotmark.thinking .d,
+  .brains-root .press,
+  .brains-root .caret,
+  .brains-root .rise,
+  .brains-root .view-fade,
+  .brains-root .halo {
+    animation: none !important;
+    transition: none !important;
+  }
 }

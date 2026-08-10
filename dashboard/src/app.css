@@ -17,6 +17,7 @@ body { margin: 0; }
 .hdr { display: flex; align-items: center; gap: 12px; padding: 16px 18px 12px; }
 .wordmark { font-family: 'Geist', sans-serif; font-weight: 800; letter-spacing: 0.02em; font-size: 20px; color: var(--t-display); text-transform: uppercase; }
 .wordmark .slash { color: var(--azure); }
+.brains-root[data-th='night'] .wordmark .slash { color: var(--azure-bright); }
 .hdr .spacer { flex: 1; }
 .verdict { font-family: 'Geist Mono', monospace; font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border: 1px solid var(--hl); border-radius: 4px; color: var(--t-sec); }
 .verdict .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--t-mut); }
@@ -55,10 +56,6 @@ body { margin: 0; }
 .prop .target { font-family: 'Geist Mono', monospace; font-size: 11px; color: var(--t-sec); }
 .prop .why { margin: 8px 0; font-size: 13px; color: var(--t-body); }
 .prop .btns { display: flex; gap: 8px; margin-top: 12px; }
-.btn { flex: 1; padding: 11px; border-radius: 6px; border: 1px solid var(--hl); background: var(--elev); color: var(--t-body); font: 600 13px 'Geist', sans-serif; cursor: pointer; }
-.btn.approve { background: var(--azure); border-color: var(--azure); color: #fff; }
-.btn.reject { background: none; }
-.btn:active { transform: scale(.985); }
 
 /* ---- capture ---- */
 textarea.cap { width: 100%; min-height: 120px; background: var(--pane); color: var(--t-body); border: 1px solid var(--hl); border-radius: 8px; padding: 12px; font: 14px 'Geist', sans-serif; resize: vertical; }
