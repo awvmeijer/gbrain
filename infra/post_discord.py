@@ -4,7 +4,11 @@ import sys
 import keyring
 import httpx
 
-url = keyring.get_password("brain", "DISCORD_WEBHOOK_URL")
+try:
+    url = keyring.get_password("brain", "DISCORD_WEBHOOK_URL")
+except Exception as e:  # locked login keychain under launchd (-25320) → skip, don't crash
+    print(f"keychain unreadable ({e}); skipping", file=sys.stderr)
+    sys.exit(0)
 if not url:
     print("no DISCORD_WEBHOOK_URL; skipping", file=sys.stderr)
     sys.exit(0)

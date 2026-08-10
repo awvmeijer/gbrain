@@ -9,24 +9,39 @@ BV="$GB/sidecars/.venv/bin/python"        # self-contained: httpx + keyring
 YV="$GB/recipes/youtube-to-brain/.venv/bin/python"
 log() { echo "[$(date '+%F %T')] $*"; }
 
+# Per-step network watchdog. 2026-07-08: youtube backfill hung 4+ days on an
+# untimed transcript socket; launchd won't start a second com.brains.feeds
+# while the label is alive, so EVERY feed went stale. Wrap each network recipe
+# so one hung read can never wedge the whole pipeline again — TERM at the cap,
+# KILL 30s later for any C-level blocked syscall. A timed-out step trips its own
+# `|| log ... failed` fallback and the pipeline marches on. Override the ceiling
+# with FEEDS_STEP_TIMEOUT=<seconds>.
+STEP_TIMEOUT="${FEEDS_STEP_TIMEOUT:-1200}"   # 20 min per network step
+if command -v timeout >/dev/null 2>&1; then RUN="timeout -k 30 $STEP_TIMEOUT"
+elif command -v gtimeout >/dev/null 2>&1; then RUN="gtimeout -k 30 $STEP_TIMEOUT"
+else RUN=""; log "warn: no timeout(1) on PATH — per-step watchdog disabled"; fi
+
 log "collect: discord"
-"$BV" "$GB/recipes/discord-to-brain/collect.py" "$ING" || log "  discord collect failed"
+$RUN "$BV" "$GB/recipes/discord-to-brain/collect.py" "$ING" || log "  discord collect failed"
 log "collect: youtube"
-"$YV" "$GB/recipes/youtube-to-brain/collect.py" "$ING" --limit 1 --summarize || log "  youtube collect failed"
+$RUN "$YV" "$GB/recipes/youtube-to-brain/collect.py" "$ING" --limit 1 --summarize || log "  youtube collect failed"
 log "collect: youtube history drip (backfill)"
-"$YV" "$GB/recipes/youtube-to-brain/backfill.py" "$ING" --max-new 30 || log "  youtube backfill drip failed (will resume next night)"
+$RUN "$YV" "$GB/recipes/youtube-to-brain/backfill.py" "$ING" --max-new 30 || log "  youtube backfill drip failed/timed out (will resume next night)"
 log "collect: x (fintwit)"
-"$BV" "$GB/recipes/x-to-brain/collect.py" "$ING" --per-handle-sleep 1.2 --max 25 || log "  x collect failed"
+$RUN "$BV" "$GB/recipes/x-to-brain/collect.py" "$ING" --per-handle-sleep 1.2 --max 25 || log "  x collect failed"
 log "collect: rss (finance news)"
-"$BV" "$GB/recipes/rss-to-brain/collect.py" "$ING" --max 50 || log "  rss collect failed"
+$RUN "$BV" "$GB/recipes/rss-to-brain/collect.py" "$ING" --max 50 || log "  rss collect failed"
 log "collect: git (repo commits)"
-"$BV" "$GB/recipes/git-to-brain/collect.py" "$ING" --max 200 || log "  git collect failed"
+$RUN "$BV" "$GB/recipes/git-to-brain/collect.py" "$ING" --max 200 || log "  git collect failed"
 log "collect: telegram (scanners)"
 # Read-only over the official Telegram API; no-ops with a clear message until
 # TELEGRAM_* secrets + session exist (recipes/telegram-to-brain/README.md).
-"$BV" "$GB/recipes/telegram-to-brain/collect.py" "$ING" --limit 50 || log "  telegram collect failed (set up creds?)"
+$RUN "$BV" "$GB/recipes/telegram-to-brain/collect.py" "$ING" --limit 50 || log "  telegram collect failed (set up creds?)"
 log "collect: manual captures (iCloud BrainCapture/)"
 "$BV" "$GB/recipes/manual-capture/import_captures.py" "$ING" || log "  capture import failed"
+log "collect: hermes sessions (mirror ~/.hermes → brain; brain is canonical)"
+# No-ops with a message until Hermes is installed (recipes/hermes-bridge/README.md).
+"$BV" "$GB/recipes/hermes-to-brain/collect.py" || log "  hermes mirror failed"
 
 log "import + embed"
 gbrain import "$ING" --no-embed || log "  import failed"
@@ -61,10 +76,12 @@ else
 fi
 
 # Consolidation — the deep-sleep cycle is `gbrain dream` (facts · salience ·
-# symbol-edges · consolidate · purge). NOT auto-run here yet: (1) it holds the
-# PGLite single-writer lock for its whole multi-minute run (freezes the dashboard);
-# (2) during 2026-07-02 testing, churn + a mid-run SIGTERM left ticker/catalyst
-# pages soft-deleted (its purge phase then hard-deletes soft-deleted rows). Re-enable
-# AFTER the Postgres migration (task #43) removes the lock, and only run it to
-# completion (never kill mid-transaction). Manual: `gbrain dream`.
+# symbol-edges · consolidate · purge). It now lives in infra/dream-cron.sh
+# (com.brains.dream.plist, 03:30 nightly), which GATES the dream on
+# engine != pglite because of the 2026-07-02 trap: on PGLite it holds the
+# single-writer lock for its whole multi-minute run (freezes the dashboard),
+# and churn + a mid-run SIGTERM left ticker/catalyst pages soft-deleted (its
+# purge phase then hard-deletes soft-deleted rows). The gate lifts automatically
+# once the Postgres migration (task #43) lands; the cron is SIGTERM-safe (lets
+# the running phase finish — never kill mid-transaction). Manual: `gbrain dream`.
 log "done"

@@ -36,8 +36,32 @@ import time
 from pathlib import Path
 
 import httpx
+import requests
 
 from collect import UA, _channels, _slug, suspect_content_year
+
+# youtube_transcript_api drives requests under the hood and passes NO timeout,
+# so a half-open socket (server accepted the connection then went silent) blocks
+# in recv() forever. That is exactly what wedged the 2026-07-08 nightly run for
+# 4+ days and — because launchd won't start a second com.brains.feeds while the
+# label is alive — starved every other feed. A Session subclass that injects a
+# default per-request timeout closes the hole; the library accepts an
+# http_client= Session (v1.x). watch_meta already has httpx timeout=25.
+_TRANSCRIPT_TIMEOUT = 20.0  # seconds, per underlying HTTP request
+
+
+class _TimeoutSession(requests.Session):
+    """requests.Session that enforces a default timeout on every request so a
+    silent peer can never wedge the run. Mirrors the default Accept-Language
+    the library would otherwise set on its own session."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.headers.update({"Accept-Language": "en-US"})
+
+    def request(self, *args, **kwargs):  # type: ignore[override]
+        kwargs.setdefault("timeout", _TRANSCRIPT_TIMEOUT)
+        return super().request(*args, **kwargs)
 
 # Transient = the IP/endpoint is throttled; retrying next run will work.
 # Permanent = this video will never have a transcript; stop asking.
@@ -45,11 +69,11 @@ _PERMANENT = {"TranscriptsDisabled", "NoTranscriptFound", "VideoUnavailable",
               "VideoUnplayable", "AgeRestricted"}
 
 
-def _transcript_classified(video_id: str) -> tuple[str | None, str]:
+def _transcript_classified(video_id: str, http_client: requests.Session) -> tuple[str | None, str]:
     """(text, error_class) — error_class '' on success."""
     from youtube_transcript_api import YouTubeTranscriptApi
     try:
-        fetched = YouTubeTranscriptApi().fetch(video_id)
+        fetched = YouTubeTranscriptApi(http_client=http_client).fetch(video_id)
         return " ".join(s.text for s in fetched).strip(), ""
     except Exception as e:  # noqa: BLE001
         kind = type(e).__name__
@@ -112,7 +136,8 @@ def main() -> int:
     handles = [h if h.startswith("@") else "@" + h for h in (args.channels or _channels())]
     written = skipped = missed = attempts = blocks = 0
     aborted = False
-    with httpx.Client(cookies={"SOCS": "CAI"}) as client:  # consent-wall bypass
+    with httpx.Client(cookies={"SOCS": "CAI"}) as client, \
+            _TimeoutSession() as ts_client:  # consent-wall bypass + timeout guard
         for handle in handles:
             if aborted or attempts >= args.max_new:
                 break
@@ -124,7 +149,7 @@ def main() -> int:
                 if attempts >= args.max_new:
                     break
                 attempts += 1
-                txt, err = _transcript_classified(vid)
+                txt, err = _transcript_classified(vid, ts_client)
                 if not txt:
                     missed += 1
                     if err in _PERMANENT:

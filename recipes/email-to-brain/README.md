@@ -30,10 +30,17 @@ or by flipping `status:` on the page.
 
 **Key change from the old pipeline:** verdicts NEVER touch Gmail. The old
 agent created Gmail drafts at proposal time; here even the draft text just
-lives in the proposal page body. Executing an approved proposal (archive the
-thread, create + send the draft) is a separate explicit step — a future
-executor in the trello-executor mold, using the mutation helpers already
-ported into `gmail_client.py` (`archive`, `create_draft_reply`, `send_draft`).
+lives in the proposal page body.
+
+**Drafts-on-approval (Phase 3):** each run now FIRST executes approved
+`send_drafted_reply` proposals — the draft from the page body becomes a real
+Gmail **draft** (`gmail_client.create_draft_reply`), and the page is stamped
+`draft_id` + `drafted_at` on both the brain page and the ingest file (the
+dual write keeps `gbrain import`'s content-hash short-circuit true, so the
+stamp survives the nightly re-import — without it you'd get duplicate
+drafts). Drafts are **never sent**: you send from Gmail yourself, or a
+future send executor acts on a further explicit approval. Archive execution
+remains future work. Disable with `--no-execute-drafts`.
 
 ## Pattern (code for data, LLM for judgment)
 

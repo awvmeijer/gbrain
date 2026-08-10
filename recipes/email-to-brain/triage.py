@@ -19,6 +19,17 @@ Five-field discipline carried over (old gateway → page frontmatter):
     rationale → rationale · rollback_note → rollback
 All five are required; a verdict that can't fill them gets defaults or is dropped.
 
+Drafts-on-approval (Phase 3): each run FIRST executes approved `draft_reply`
+proposals — a proposal page with `status: approved` + `action:
+send_drafted_reply` and no `draft_id` yet gets its draft text created as a
+real Gmail DRAFT (never sent; sending stays a human act in Gmail, or a future
+send executor). The page is then stamped `draft_id` + `drafted_at` — on BOTH
+the brain page and the ingest file, because `gbrain import` short-circuits on
+`existing.content_hash == file hash`: if only the brain page changed, the
+next nightly import would re-import the stale file and clobber the stamp
+(→ duplicate drafts). Approvals arrive via the dashboard or the Telegram
+approvals bot (`/api/decide`). Disable with `--no-execute-drafts`.
+
 Cursor semantics (same as old ingest_state): `~/.gbrain/email-triage-state.json`
 stores the newest Gmail internalDate (ms) already classified; threads at or
 below it are skipped, so re-runs no-op until new mail arrives. Belt-and-braces
@@ -48,6 +59,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import subprocess
 import sys
 import time
 from dataclasses import dataclass
@@ -58,6 +70,7 @@ from typing import Any
 import gmail_client
 
 HERE = Path(__file__).parent
+GBRAIN_DIR = Path.home() / "gbrain"
 STATE_PATH = Path.home() / ".gbrain" / "email-triage-state.json"
 PROMPT_PATH = HERE / "prompt.md"
 
@@ -344,6 +357,100 @@ def write_proposal(out_root: Path, t: Any, v: Verdict) -> Path | None:
     return path
 
 
+# ------------------------------------------------- execute approved drafts
+
+
+def _gb(args: list[str], stdin: str | None = None, timeout: int = 60) -> tuple[int, str]:
+    """Sanctioned gbrain CLI call (same pattern as recipes/entity-extract)."""
+    r = subprocess.run(["gbrain", *args], cwd=str(GBRAIN_DIR), input=stdin,
+                       capture_output=True, text=True, timeout=timeout)
+    return r.returncode, (r.stdout or "") + (r.stderr or "")
+
+
+def _fm_field(content: str, key: str) -> str:
+    m = re.search(rf"^{re.escape(key)}:[ \t]*(.*)$", content, re.MULTILINE)
+    return m.group(1).strip().strip("'\"") if m else ""
+
+
+def _parse_draft_section(content: str) -> dict[str, str] | None:
+    """Pull to/subject/body out of the page's `## Draft reply` section."""
+    sec = re.search(r"## Draft reply\n(.*?)(?:\n## |\Z)", content, re.DOTALL)
+    if not sec:
+        return None
+    block = sec.group(1)
+    to = re.search(r"\*\*To:\*\*\s*(.+)", block)
+    subject = re.search(r"\*\*Subject:\*\*\s*(.+)", block)
+    body = re.search(r"```\n(.*?)\n?```", block, re.DOTALL)
+    if not (to and body and body.group(1).strip()):
+        return None
+    return {
+        "to": to.group(1).strip(),
+        "subject": subject.group(1).strip() if subject else "",
+        "body": body.group(1).strip(),
+    }
+
+
+def _stamp_drafted(slug: str, content: str, draft_id: str, out_root: Path) -> None:
+    """Record draft_id/drafted_at on the brain page AND the ingest file.
+
+    The file write-through matters: `gbrain import` skips a file only when its
+    hash matches the LIVE page's content_hash. A brain-only stamp would make
+    the next nightly import re-import the stale file, wipe the stamp, and the
+    run after that would create a duplicate Gmail draft.
+    """
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    content = re.sub(r"^draft(_id|ed_at):\s*.+\n", "", content, flags=re.MULTILINE)
+    content = re.sub(r"^(---\n)", rf"\1draft_id: {draft_id}\ndrafted_at: {now}\n", content, count=1)
+    rc, out = _gb(["put", slug, "--content", content])
+    if rc != 0:
+        print(f"  stamp FAILED (brain) {slug}: {out.strip()[:120]}", file=sys.stderr)
+    ing_file = (out_root / f"{slug}.md").resolve()
+    if ing_file.is_relative_to(out_root.resolve()) and ing_file.exists():
+        ing_file.write_text(content)
+
+
+def execute_approved_drafts(out_root: Path) -> int:
+    """Approved `send_drafted_reply` proposals → real Gmail drafts (NEVER sent).
+
+    Idempotent via the `draft_id` stamp; safe to run every triage sweep.
+    Returns the number of drafts created.
+    """
+    rc, out = _gb(["list", "--type", "proposal", "--limit", "100", "--sort", "updated_desc"])
+    if rc != 0:
+        print(f"execute-drafts: gbrain list failed: {out.strip()[:120]}", file=sys.stderr)
+        return 0
+    slugs = [ln.split("\t")[0].strip() for ln in out.splitlines()
+             if ln.split("\t")[0].strip().startswith("proposals/")]
+    created = 0
+    for slug in slugs:
+        rc, content = _gb(["get", slug])
+        if rc != 0 or not content.strip():
+            continue
+        if (_fm_field(content, "proposed_by") != AGENT
+                or _fm_field(content, "action") != "send_drafted_reply"
+                or _fm_field(content, "status").lower() != "approved"
+                or _fm_field(content, "draft_id")):
+            continue
+        thread_id = _fm_field(content, "thread_id")
+        draft = _parse_draft_section(content)
+        if not thread_id or not draft:
+            print(f"  {slug}: approved but no parseable draft/thread_id — skipping", file=sys.stderr)
+            continue
+        try:
+            draft_id = gmail_client.create_draft_reply(
+                thread_id, to=draft["to"],
+                subject=draft["subject"] or "Re:", body=draft["body"])
+        except Exception as e:  # noqa: BLE001 — auth stale / API error: retry next run
+            print(f"  {slug}: create_draft_reply failed: {type(e).__name__}: {e}", file=sys.stderr)
+            continue
+        _stamp_drafted(slug, content, draft_id, out_root)
+        created += 1
+        print(f"  drafted {slug} → Gmail draft {draft_id} (NOT sent — send from Gmail)")
+    if created:
+        print(f"execute-drafts: {created} Gmail draft(s) created")
+    return created
+
+
 # ---------------------------------------------------------------- fixtures
 
 
@@ -368,6 +475,8 @@ def main() -> None:
     ap.add_argument("--dry-run", action="store_true", help="stub classifier, no bridge, no state writes")
     ap.add_argument("--fixtures", help="dir of thread-*.json fixtures instead of Gmail")
     ap.add_argument("--auth", action="store_true", help="USER-RUN ONLY: interactive Gmail OAuth re-auth")
+    ap.add_argument("--no-execute-drafts", action="store_true",
+                    help="skip turning approved draft_reply proposals into Gmail drafts")
     args = ap.parse_args()
 
     if args.auth:
@@ -379,6 +488,14 @@ def main() -> None:
     if not args.output_dir:
         ap.error("output_dir is required (or use --auth)")
     out_root = Path(args.output_dir).expanduser()
+
+    # Approved drafts FIRST — independent of whether new mail arrived, and the
+    # human-facing outcome of the last approval round. Never in offline modes.
+    if not args.no_execute_drafts and not args.dry_run and not args.fixtures:
+        try:
+            execute_approved_drafts(out_root)
+        except Exception as e:  # noqa: BLE001 — executor trouble must not block triage
+            print(f"execute-drafts failed: {type(e).__name__}: {e}", file=sys.stderr)
 
     state = _load_state()
     cursor_ms = int(state.get("cursor_ms") or 0)

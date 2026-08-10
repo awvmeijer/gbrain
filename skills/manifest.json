@@ -232,7 +232,7 @@
     {
       "name": "cold-start",
       "path": "cold-start/SKILL.md",
-      "description": "Day-one brain bootstrapping: sequence the highest-leverage data sources (contacts, calendar, email, conversations, social, archives) to go from empty brain to useful brain. Uses ClawVisor for safe credential handling — agents never hold raw API keys."
+      "description": "Day-one brain bootstrapping: sequence the highest-leverage data sources (contacts, calendar, email, conversations, social, archives) to go from empty brain to useful brain. Uses ClawVisor for safe credential handling \u2014 agents never hold raw API keys."
     },
     {
       "name": "ask-user",
@@ -257,17 +257,17 @@
     {
       "name": "eiirp",
       "path": "eiirp/SKILL.md",
-      "description": "Everything In Its Right Place — post-work organizer. 7-phase audit: inventory, taxonomy, schema check (via cathedral CLI), file, skill graph audit, verify, report."
+      "description": "Everything In Its Right Place \u2014 post-work organizer. 7-phase audit: inventory, taxonomy, schema check (via cathedral CLI), file, skill graph audit, verify, report."
     },
     {
       "name": "schema-unify",
       "path": "schema-unify/SKILL.md",
-      "description": "Migrate a brain off a noisy 24+-type pack onto gbrain-base-v2 (15 canonical types). 7-phase workflow: brain → assess → propose → apply → sync → verify → commit. Wraps the v0.41.22 unify-types PROTECTED Minion handler."
+      "description": "Migrate a brain off a noisy 24+-type pack onto gbrain-base-v2 (15 canonical types). 7-phase workflow: brain \u2192 assess \u2192 propose \u2192 apply \u2192 sync \u2192 verify \u2192 commit. Wraps the v0.41.22 unify-types PROTECTED Minion handler."
     },
     {
       "name": "skill-optimizer",
       "path": "skill-optimizer/SKILL.md",
-      "description": "Self-evolving skill optimization via gbrain skillopt — SkillOpt-paper-grounded text-space optimizer with validation gating (median-of-3 + epsilon=0.05), bundled-skill safety, bootstrap review sentinel, per-skill DB lock, and atomic versioned writes."
+      "description": "Self-evolving skill optimization via gbrain skillopt \u2014 SkillOpt-paper-grounded text-space optimizer with validation gating (median-of-3 + epsilon=0.05), bundled-skill safety, bootstrap review sentinel, per-skill DB lock, and atomic versioned writes."
     },
     {
       "name": "measure-before-you-fix",
@@ -357,17 +357,32 @@
     {
       "name": "fintwit-analyst",
       "path": "fintwit-analyst/SKILL.md",
-      "description": "Synthesize the X (fintwit), YouTube-creator, and Discord feeds into a daily actionable finance read — tickers, catalysts, what changed, source conflicts. Volume is never a signal."
+      "description": "Synthesize the X (fintwit), YouTube-creator, and Discord feeds into a daily actionable finance read \u2014 tickers, catalysts, what changed, source conflicts. Volume is never a signal."
     },
     {
       "name": "what-needs-me",
       "path": "what-needs-me/SKILL.md",
-      "description": "Surface what needs the user's attention or a decision now — pending approvals (proposals-as-pages), open decisions, follow-ups, flagged feed signals. Ranked, read-only."
+      "description": "Surface what needs the user's attention or a decision now \u2014 pending approvals (proposals-as-pages), open decisions, follow-ups, flagged feed signals. Ranked, read-only."
     },
     {
       "name": "weekly-reflection",
       "path": "weekly-reflection/SKILL.md",
-      "description": "Review the week's brain and write a reflection page — recurring themes, what changed, which feed calls played out, conviction shifts. The reflection Brains never did; rides the dream cycle + skillopt."
+      "description": "Review the week's brain and write a reflection page \u2014 recurring themes, what changed, which feed calls played out, conviction shifts. The reflection Brains never did; rides the dream cycle + skillopt."
+    },
+    {
+      "name": "group-watch",
+      "path": "group-watch/SKILL.md",
+      "description": "Track the research group \u2014 new papers BY Steve Yim's group and new citations OF their work (cited_by edges). Surfaces cross-field pickup. Research sibling of the convergence engine."
+    },
+    {
+      "name": "field-weekly",
+      "path": "field-weekly/SKILL.md",
+      "description": "Weekly field scan \u2014 recent arXiv papers in the group's categories, clustered by theme, ranked by relevance to the user's air-quality / 3DREAMS work."
+    },
+    {
+      "name": "todo-suggester",
+      "path": "todo-suggester/SKILL.md",
+      "description": "Proactively propose todos WITH due dates (filing windows, findings, paper deadlines, stale loops) through the proposals gate; approval \u2192 Trello card via trello-executor."
     }
   ],
   "dependencies": {

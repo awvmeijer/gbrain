@@ -427,6 +427,34 @@ def _svc(url: str) -> bool:
 
 FEED_MAX_AGE_H = {"discord": 30, "x": 30, "youtube": 48, "telegram": 30, "digests": 30}
 
+APPROVALS_ENV = HOME / ".gbrain" / "telegram_approvals.env"
+
+
+def _proc_running(pattern: str) -> bool:
+    """Liveness for port-less long-pollers (e.g. the telegram-approvals bot)."""
+    try:
+        return subprocess.run(["pgrep", "-f", pattern], capture_output=True,
+                              timeout=5).returncode == 0
+    except Exception:
+        return False
+
+
+def _engine() -> str:
+    try:
+        return json.loads((HOME / ".gbrain" / "config.json").read_text()).get("engine", "pglite")
+    except Exception:
+        return "pglite"
+
+
+def _postgres_ok() -> bool:
+    """TCP liveness on the local Postgres. Only consulted when engine != pglite."""
+    import socket
+    try:
+        with socket.create_connection(("127.0.0.1", 5432), timeout=2):
+            return True
+    except Exception:
+        return False
+
 
 def _newest_age_h(subdir: str) -> float | None:
     d = ING / subdir
@@ -466,7 +494,19 @@ def api_health(x_brain_key: str | None = Header(default=None)):
         "ollama": _svc("http://127.0.0.1:11434/api/tags"),
         "bridge": _svc("http://127.0.0.1:8789/v1/models"),  # fast liveness; /health does a slow Claude ping
         "reranker": _svc("http://127.0.0.1:8081/health"),
+        # OAuth MCP daemon (Hermes bridge). Crash-looped invisibly for 3 weeks
+        # in Jul 2026 (post-reboot Postgres outage → launchd pended the spawn);
+        # probing it here puts it on the SwiftBar verdict so that can't recur.
+        "mcp": _svc("http://127.0.0.1:3131/health"),
     }
+    # Conditional probes: a component only joins `services` (and thus the
+    # verdict) once it is CONFIGURED — an intentionally-absent bot or a
+    # not-yet-migrated Postgres must not paint the menubar red.
+    if APPROVALS_ENV.exists():
+        services["approvals"] = _proc_running("telegram-approvals/bot.py")
+    engine = _engine()
+    if engine != "pglite":
+        services["postgres"] = _postgres_ok()
     feeds, stale = [], False
     for src, maxh in FEED_MAX_AGE_H.items():
         age = _newest_age_h(src)
@@ -476,7 +516,7 @@ def api_health(x_brain_key: str | None = Header(default=None)):
                       "stale": is_stale})
     down = not all(services.values())
     return {"verdict": "down" if down else ("warn" if stale else "ok"),
-            "services": services, "feeds": feeds}
+            "services": services, "feeds": feeds, "engine": engine}
 
 
 @app.get("/api/pages")
@@ -539,6 +579,7 @@ async def api_decide(request: Request, x_brain_key: str | None = Header(default=
     _require(x_brain_key)
     data = await request.json()
     slug, decision = data.get("slug"), data.get("decision")
+    decided_by = re.sub(r"[^\w.-]", "", str(data.get("decided_by") or "dashboard"))[:32] or "dashboard"
     if not slug or decision not in ("approve", "reject"):
         raise HTTPException(400, "need slug + decision in {approve,reject}")
     content = _gbrain(["get", slug])
@@ -552,9 +593,65 @@ async def api_decide(request: Request, x_brain_key: str | None = Header(default=
     # decision audit (cheap provenance — who/when the status flipped)
     decided_at = datetime.now().astimezone().isoformat(timespec="seconds")
     content = re.sub(r"^decided_(at|by):\s*.+\n", "", content, flags=re.MULTILINE)
-    content = re.sub(r"^(---\n)", rf"\1decided_by: dashboard\ndecided_at: {decided_at}\n", content, count=1)
+    content = re.sub(r"^(---\n)", rf"\1decided_by: {decided_by}\ndecided_at: {decided_at}\n", content, count=1)
     _gbrain(["put", slug, "--content", content])
+    # Write-through to the ingest file: `gbrain import` skips a file only when
+    # its hash matches the LIVE page's content_hash, so a brain-only status
+    # flip would be silently REVERTED to pending by the next nightly import of
+    # ~/brains-ingest. Keeping file == page makes the decision durable.
+    try:
+        ing_file = (ING / f"{slug}.md").resolve()
+        if ing_file.is_relative_to(ING.resolve()) and ing_file.exists():
+            ing_file.write_text(content)
+    except Exception as e:  # noqa: BLE001 — the brain page is still decided; log and move on
+        _log(f"decide write-through failed for {slug}: {e}")
     return {"ok": True, "slug": slug, "status": new_status}
+
+
+@app.post("/api/propose")
+async def api_propose(request: Request, x_brain_key: str | None = Header(default=None)):
+    """Write a proposal page (skills/conventions/proposals.md) on behalf of an
+    external agent (Hermes shim, Forge). Five-field discipline enforced here so
+    every /api/needs item is decidable at a glance. The page lands in
+    brains-ingest/proposals/ and is imported async, same as a capture."""
+    _require(x_brain_key)
+    data = await request.json()
+    required = ("action", "target", "rationale", "rollback", "proposed_by")
+    missing = [k for k in required if not str(data.get(k) or "").strip()]
+    if missing:
+        raise HTTPException(400, f"proposal missing required fields: {', '.join(missing)}")
+    title = re.sub(r"\s+", " ", str(data.get("title") or data["action"])).strip()[:120]
+    body = str(data.get("body") or "").strip()
+    now = datetime.now().astimezone()
+    prop_dir = ING / "proposals"
+    prop_dir.mkdir(parents=True, exist_ok=True)
+    name = f"{now.strftime('%Y-%m-%d')}-{_slug(title)}"
+    if (prop_dir / f"{name}.md").exists():  # same title same day → disambiguate
+        name = f"{name}-{now.strftime('%H%M%S')}"
+    ystr = lambda s: json.dumps(str(s))  # JSON string is valid single-line YAML
+    lines = [
+        "---",
+        f"title: {ystr(title)}",
+        "type: proposal",
+        "status: pending",
+        f"action: {data['action']}",
+        f"target: {ystr(data['target'])}",
+        f"rationale: {ystr(data['rationale'])}",
+        f"rollback: {ystr(data['rollback'])}",
+        f"proposed_by: {data['proposed_by']}",
+        f"created: {now.strftime('%Y-%m-%d')}",
+        "tags: [proposal]",
+        "---",
+        "",
+        f"# {title}",
+        "",
+        body or "_(no draft content)_",
+    ]
+    path = prop_dir / f"{name}.md"
+    path.write_text("\n".join(lines) + "\n")
+    _log(f"propose: {data['proposed_by']} → {path.name}")
+    _ingest_async()
+    return JSONResponse({"ok": True, "slug": f"proposals/{name}", "status": "pending"})
 
 
 # ---- Console adapter: stats / ops / graph / ask (all gbrain-backed) ----
