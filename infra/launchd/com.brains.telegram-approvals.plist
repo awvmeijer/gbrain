@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.brains.telegram-approvals</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/awvmeijer/gbrain/sidecars/.venv/bin/python</string>
+        <string>/Users/awvmeijer/gbrain/recipes/telegram-approvals/bot.py</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>/Users/awvmeijer/gbrain/recipes/telegram-approvals</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>15</integer>
+    <key>StandardOutPath</key>
+    <string>/Users/awvmeijer/gbrain/logs/telegram-approvals.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/awvmeijer/gbrain/logs/telegram-approvals.log</string>
+</dict>
+</plist>

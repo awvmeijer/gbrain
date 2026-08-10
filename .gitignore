@@ -59,3 +59,4 @@ recipes/**/.venv/
 sidecars/.venv/
 data/models/
 __pycache__/
+data/

@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.brains.dream</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/awvmeijer/gbrain/infra/dream-cron.sh</string>
+  </array>
+  <!-- 03:30 nightly. The script gates `gbrain dream` on engine != pglite
+       (2026-07-02 data-loss trap — see infra/dream-cron.sh header) and runs
+       the LLM typed-relations pass either way. Pair with a pmset repeat wake
+       at 03:25 or the Mac sleeps through this. -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>3</integer>
+    <key>Minute</key>
+    <integer>30</integer>
+  </dict>
+  <key>RunAtLoad</key>
+  <false/>
+  <!-- Generous: on SIGTERM the script lets the in-flight dream phase finish
+       (never kill mid-transaction); launchd waits this many seconds before
+       escalating to SIGKILL. -->
+  <key>ExitTimeOut</key>
+  <integer>5400</integer>
+  <key>StandardOutPath</key>
+  <string>/Users/awvmeijer/gbrain/logs/dream.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/awvmeijer/gbrain/logs/dream.log</string>
+</dict>
+</plist>
