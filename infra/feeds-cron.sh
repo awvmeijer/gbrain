@@ -33,6 +33,10 @@ log "collect: rss (finance news)"
 $RUN "$BV" "$GB/recipes/rss-to-brain/collect.py" "$ING" --max 50 || log "  rss collect failed"
 log "collect: git (repo commits)"
 $RUN "$BV" "$GB/recipes/git-to-brain/collect.py" "$ING" --max 200 || log "  git collect failed"
+log "collect: obsidian (BrainVault)"
+# Local-disk only (no network) but keep the watchdog for symmetry. Deliberately
+# NOT in the health feed-freshness set: a quiet vault is normal, not stale.
+$RUN "$BV" "$GB/recipes/obsidian-to-brain/collect.py" "$ING" || log "  obsidian collect failed"
 log "collect: telegram (scanners)"
 # Read-only over the official Telegram API; no-ops with a clear message until
 # TELEGRAM_* secrets + session exist (recipes/telegram-to-brain/README.md).
