@@ -19,8 +19,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
+import subprocess
 import sys
+import tempfile
 from datetime import date
 from pathlib import Path
 
@@ -162,6 +165,96 @@ def _slug(h: str) -> str:
     return h.lstrip("@").lower()
 
 
+# --- ASR fallback (captionless videos) ---------------------------------------
+# Previous behavior: no auto-captions → video silently DROPPED. Fallback: pull
+# the audio with yt-dlp (already in this venv for backfill.py) and transcribe
+# locally with MLX Whisper — same model + invocation as the capture sidecar
+# (sidecars/capture/server.py). This venv doesn't carry mlx_whisper; the
+# transcription shells out to the capture sidecar's venv python (override with
+# BRAINS_ASR_PYTHON). If that interpreter can't import mlx_whisper the fallback
+# disables itself and captionless videos are skipped exactly as before. Audio
+# never leaves the machine. Budget: ASR_MAX_PER_RUN videos per run (protect
+# the 06:30 cron window; the nightly backfill drip absorbs the rest) and
+# ASR_MAX_ATTEMPTS strikes per video — tracked in <out>/youtube/.asr.json,
+# pre-marked before each try so even a watchdog-killed run counts one — then
+# the video is marked seen. Nothing is retried forever.
+ASR_PYTHON = os.environ.get(
+    "BRAINS_ASR_PYTHON",
+    str(Path.home() / "gbrain" / "sidecars" / ".venv" / "bin" / "python"))
+WHISPER_MODEL = os.environ.get("WHISPER_MODEL", "mlx-community/whisper-small-mlx")
+ASR_MAX_PER_RUN = 2
+ASR_MAX_ATTEMPTS = 2
+ASR_MAX_DURATION = 7200  # skip >2h streams — transcribe time would blow the window
+_ASR_OK: list[bool] = []  # memoized availability probe
+
+
+def _asr_available() -> bool:
+    if not _ASR_OK:
+        try:
+            ok = subprocess.run([ASR_PYTHON, "-c", "import mlx_whisper"],
+                                capture_output=True, timeout=60).returncode == 0
+        except (OSError, subprocess.TimeoutExpired):
+            ok = False
+        if not ok:
+            print(f"    asr: mlx_whisper not importable via {ASR_PYTHON} — "
+                  "fallback disabled", file=sys.stderr)
+        _ASR_OK.append(ok)
+    return _ASR_OK[0]
+
+
+def _save_asr(path: Path, state: dict[str, int]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(state, indent=2))
+
+
+def _asr_transcript(video_id: str) -> str | None:
+    """Audio via yt-dlp → local MLX Whisper. Every subprocess is timed so a
+    hung download or decode can never wedge the cron (feeds-cron's per-step
+    watchdog is the backstop above this)."""
+    ytdlp = str(HERE / ".venv" / "bin" / "yt-dlp")
+    with tempfile.TemporaryDirectory(prefix="yt-asr-") as td:
+        try:
+            r = subprocess.run(
+                [ytdlp, "-f", "bestaudio[ext=m4a]/bestaudio",
+                 "-o", str(Path(td) / "audio.%(ext)s"),
+                 "--match-filter", f"duration<={ASR_MAX_DURATION}",
+                 "--socket-timeout", "20", "--quiet", "--no-warnings",
+                 f"https://youtu.be/{video_id}"],
+                capture_output=True, text=True, timeout=300)
+        except (OSError, subprocess.TimeoutExpired) as e:
+            print(f"    asr: download failed {video_id}: {type(e).__name__}",
+                  file=sys.stderr)
+            return None
+        audio = next(iter(sorted(Path(td).glob("audio.*"))), None)
+        if audio is None:
+            tail = (r.stderr or "").strip().splitlines()
+            print(f"    asr: no audio for {video_id} "
+                  f"({tail[-1][:80] if tail else 'duration-filtered or blocked'})",
+                  file=sys.stderr)
+            return None
+        try:
+            w = subprocess.run(
+                [ASR_PYTHON, "-c",
+                 "import sys, mlx_whisper\n"
+                 "out = mlx_whisper.transcribe(sys.argv[1], path_or_hf_repo=sys.argv[2])\n"
+                 "print((out.get('text') or '').strip())",
+                 str(audio), WHISPER_MODEL],
+                capture_output=True, text=True, timeout=900)
+        except (OSError, subprocess.TimeoutExpired) as e:
+            print(f"    asr: whisper failed {video_id}: {type(e).__name__}",
+                  file=sys.stderr)
+            return None
+        if w.returncode != 0:
+            print(f"    asr: whisper failed {video_id}: {w.stderr.strip()[:80]}",
+                  file=sys.stderr)
+            return None
+        txt = w.stdout.strip()
+        if txt:
+            print(f"    asr: transcribed {video_id} locally ({len(txt)} chars)",
+                  file=sys.stderr)
+        return txt or None
+
+
 _SUMM_SYS = (
     "You summarize a finance YouTube video transcript into a tight digest. "
     "Output ONLY: a 1-2 sentence thesis; a bulleted list of tickers/calls with "
@@ -205,6 +298,10 @@ def main() -> None:
     seen = {}
     if seen_path.exists():
         seen = json.loads(seen_path.read_text())
+    asr_path = out_root / "youtube" / ".asr.json"
+    asr_state: dict[str, int] = (
+        json.loads(asr_path.read_text()) if asr_path.exists() else {})
+    asr_used = 0
 
     written = 0
     # SOCS=CAI = a stored "reject all" consent choice. Without it, EU IPs get
@@ -222,6 +319,25 @@ def main() -> None:
                 if v["id"] in seen_ids:
                     continue
                 txt = _transcript(v["id"])
+                asr = False
+                if not txt:
+                    # No auto-captions → local Whisper fallback (see the ASR
+                    # block above). Attempts are pre-marked in .asr.json so a
+                    # watchdog-killed run still counts one.
+                    tries = asr_state.get(v["id"], 0)
+                    if tries >= ASR_MAX_ATTEMPTS:
+                        print(f"    asr: gave up on {v['id']} after {tries} attempts",
+                              file=sys.stderr)
+                        seen_ids.add(v["id"])
+                    elif asr_used < ASR_MAX_PER_RUN and _asr_available():
+                        asr_used += 1
+                        asr_state[v["id"]] = tries + 1
+                        _save_asr(asr_path, asr_state)
+                        txt = _asr_transcript(v["id"])
+                        if txt:
+                            asr = True
+                            asr_state.pop(v["id"], None)
+                            _save_asr(asr_path, asr_state)
                 if not txt:
                     continue
                 if len(txt) > args.max_chars:
@@ -236,6 +352,7 @@ def main() -> None:
                 stale_fm = (
                     f"stale_content: true\ncontent_date_review: {stale_year}\n" if stale_year else ""
                 )
+                asr_fm = "asr: whisper-local\n" if asr else ""
                 stale_note = (
                     f"> ⚠️ **Content-date review:** internal weekday/date references fit "
                     f"**{stale_year}**, not the {v['published'][:4]} publish date — likely a "
@@ -252,6 +369,7 @@ def main() -> None:
                     f"url: https://youtu.be/{v['id']}\n"
                     f"date: {v['published']}\n"
                     f"has_digest: {'true' if digest else 'false'}\n"
+                    f"{asr_fm}"
                     f"{stale_fm}"
                     f"tags: [youtube, finance, {_slug(handle)}]\n"
                     f"---\n\n"

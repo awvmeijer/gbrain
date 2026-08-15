@@ -33,6 +33,11 @@ log "collect: rss (finance news)"
 $RUN "$BV" "$GB/recipes/rss-to-brain/collect.py" "$ING" --max 50 || log "  rss collect failed"
 log "collect: git (repo commits)"
 $RUN "$BV" "$GB/recipes/git-to-brain/collect.py" "$ING" --max 200 || log "  git collect failed"
+log "collect: edgar (SEC filings → ticker hubs)"
+# Writes into the brain directly via the gbrain CLI (no $ING pages); dedups on
+# accession in logs/edgar-state.json, so --days=7 keeps the daily poll cheap
+# while the state absorbs missed nights. Self-throttled under SEC's 10 req/s.
+$RUN "$BV" "$GB/recipes/edgar-to-brain/collect.py" --days=7 || log "  edgar collect failed"
 log "collect: obsidian (BrainVault)"
 # Local-disk only (no network) but keep the watchdog for symmetry. Deliberately
 # NOT in the health feed-freshness set: a quiet vault is normal, not stale.
@@ -47,9 +52,27 @@ log "collect: hermes sessions (mirror ~/.hermes → brain; brain is canonical)"
 # No-ops with a message until Hermes is installed (recipes/hermes-bridge/README.md).
 "$BV" "$GB/recipes/hermes-to-brain/collect.py" || log "  hermes mirror failed"
 
+# Weekly creator scorecard (Sundays): extract calls → grade vs actual closes →
+# scorecard ledger page. Before import, so tonight's import picks up the fresh
+# scorecards/<date>.md and digest.py weights sources by it same-day. grade.py
+# --refresh because cached price series end at their fetch date — without it,
+# calls that aged past a horizon since last week never get graded.
+if [ "$(date +%u)" = "7" ]; then
+  log "collect: creator scorecard (weekly)"
+  { $RUN "$BV" "$GB/recipes/creator-scorecard/extract.py" "$ING" \
+      && $RUN "$BV" "$GB/recipes/creator-scorecard/grade.py" --refresh \
+      && $RUN "$BV" "$GB/recipes/creator-scorecard/scorecard.py" "$ING"; } \
+    || log "  creator scorecard failed"
+fi
+
 log "import + embed"
 gbrain import "$ING" --no-embed || log "  import failed"
 gbrain embed --stale || log "  embed failed"
+
+log "snapshot ingest corpus (git)"
+# ~/brains-ingest is a git repo (initialized 2026-08-15) — one commit per night
+# = corpus history for free. Local-only; must never fail the cron.
+git -C "$ING" add -A && git -C "$ING" commit -q -m "daily snapshot $(date +%F)" || true
 
 log "synthesize daily digest"
 # Deterministic context: recipes/fintwit-analyst/digest.py assembles ALL

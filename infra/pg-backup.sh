@@ -29,4 +29,11 @@ log "dump ok ($SIZE bytes)"
 find "$DEST" -name 'brain-*.dump' -mtime +14 -print -delete | while read -r f; do
   log "rotated out: $f"
 done
+
+# Clean *.dump.tmp orphans (a failed pg_dump leaves its partial .tmp behind —
+# 8 zero-byte ones piled up Jul 19-26). Older than a day = dead weight;
+# tonight's live .tmp is already mv'd away or too young to match.
+find "$DEST" -name '*.dump.tmp' -mtime +1 -print -delete | while read -r f; do
+  log "cleaned tmp orphan: $f"
+done
 log "done"

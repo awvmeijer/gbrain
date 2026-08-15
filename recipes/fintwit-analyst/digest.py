@@ -75,20 +75,54 @@ def _youtube_slice(text: str) -> str:
     return f"{head}\n\n## Digest\n{body}"
 
 
-def _scorecard_block(ing: Path) -> str:
+LEDGER_STALE_DAYS = 14  # scorecard ledger older than this gets a warning line
+
+
+def _scorecard_block(ing: Path) -> tuple[str, str]:
     """creator-scorecard integration (recipes/creator-scorecard): append the
     latest source track-record page, if any, so synthesis can weight
-    conflicting calls by each source's graded hit rate."""
+    conflicting calls by each source's graded hit rate. Returns
+    (block, ledger_date); ("", "") when no ledger page exists."""
     pages = sorted((ing / "scorecards").glob("????-??-??.md"))
     if not pages:
-        return ""
-    return (
+        return "", ""
+    block = (
         "\n\n===== SOURCE TRACK RECORD (creator-scorecard) =====\n"
         "When sources above conflict on a ticker, weight the calls by each "
         "source's historical hit rate in this table and say so inline "
         '(e.g. "X, whose 30d hit rate is 75%, says ...").\n'
         + pages[-1].read_text(errors="ignore")[:PER_FILE_CAP]
     )
+    return block, pages[-1].stem
+
+
+def _coverage_footer(total: int, dropped: list[str], ledger_date: str) -> str:
+    """Deterministic coverage trailer appended to every digest. The size-cap
+    drop used to be a stderr-only count — 2026-08-14 silently lost 85 of 112
+    pages. Triage loss must be visible in the digest itself, every day."""
+    lines = [
+        f"Coverage: {total - len(dropped)} of {total} pages included "
+        f"({len(dropped)} dropped at size cap)"
+    ]
+    by_src: dict[str, list[str]] = {}
+    for rel in dropped:
+        src, _, rest = rel.partition("/")
+        by_src.setdefault(src, []).append(rest or rel)
+    for src in SOURCES:
+        if src in by_src:
+            lines.append(f"- dropped {src} ({len(by_src[src])}): "
+                         + ", ".join(by_src[src]))
+    if ledger_date:
+        age = (date.today() - date.fromisoformat(ledger_date)).days
+        lines.append(f"Source weights from scorecard ledger dated {ledger_date} "
+                     f"({age} days old)")
+        if age > LEDGER_STALE_DAYS:
+            lines.append(f"WARNING: scorecard ledger is more than "
+                         f"{LEDGER_STALE_DAYS} days old — source weights are "
+                         "stale; rerun recipes/creator-scorecard")
+    else:
+        lines.append("No scorecard ledger found — source calls are unweighted")
+    return "\n".join(lines)
 
 
 def gather(ing: Path, days: int) -> tuple[list[tuple[str, str]], list[str]]:
@@ -125,6 +159,8 @@ def main() -> int:
     ap.add_argument("--bridge", default="http://127.0.0.1:8789")
     ap.add_argument("--model", default="claude-sonnet")
     ap.add_argument("--max-bytes", type=int, default=TOTAL_CAP)
+    ap.add_argument("--dry-run", action="store_true",
+                    help="assemble context, print the coverage trailer, skip the bridge")
     args = ap.parse_args()
 
     ing = Path(args.ingest_dir).expanduser()
@@ -135,23 +171,31 @@ def main() -> int:
 
     window = f"{(date.today() - timedelta(days=args.days)).isoformat()} → {date.today().isoformat()}"
     ctx, used = [], 0
-    dropped = 0
+    dropped: list[str] = []
     for rel, content in blocks:
         piece = f"\n\n===== SOURCE: {rel} =====\n{content}"
         if used + len(piece) > args.max_bytes:
-            dropped += 1
+            dropped.append(rel)
             continue
         ctx.append(piece)
         used += len(piece)
 
     user_msg = ANALYST_PROMPT.format(window=window) + "".join(ctx)
-    user_msg += _scorecard_block(ing)  # creator-scorecard: weight by track record
+    sc_block, ledger_date = _scorecard_block(ing)
+    user_msg += sc_block  # creator-scorecard: weight by track record
     if dropped:
-        user_msg += f"\n\n[note: {dropped} lower-priority source pages omitted for length]"
+        user_msg += f"\n\n[note: {len(dropped)} lower-priority source pages omitted for length]"
     if skipped:
         user_msg += (
             f"\n\n[note: excluded as recycled/out-of-window content: {', '.join(skipped)}]"
         )
+
+    footer = _coverage_footer(len(blocks), dropped, ledger_date)
+    if args.dry_run:
+        print(f"dry-run: {len(blocks) - len(dropped)} pages, {used // 1000}KB context, "
+              f"prompt {len(user_msg) // 1000}KB — bridge call skipped", file=sys.stderr)
+        print(footer)
+        return 0
 
     try:
         r = httpx.post(
@@ -168,9 +212,10 @@ def main() -> int:
     if not out:
         print("bridge returned empty digest", file=sys.stderr)
         return 1
-    print(f"context: {len(blocks) - dropped} pages, {used // 1000}KB "
-          f"(+{dropped} dropped, {len(skipped)} stale-excluded)", file=sys.stderr)
+    print(f"context: {len(blocks) - len(dropped)} pages, {used // 1000}KB "
+          f"(+{len(dropped)} dropped, {len(skipped)} stale-excluded)", file=sys.stderr)
     print(out)
+    print("\n---\n" + footer)
     return 0
 
 

@@ -38,7 +38,8 @@ from pathlib import Path
 import httpx
 import requests
 
-from collect import UA, _channels, _slug, suspect_content_year
+from collect import (UA, ASR_MAX_PER_RUN, _asr_available, _asr_transcript,
+                     _channels, _slug, suspect_content_year)
 
 # youtube_transcript_api drives requests under the hood and passes NO timeout,
 # so a half-open socket (server accepted the connection then went silent) blocks
@@ -67,6 +68,8 @@ class _TimeoutSession(requests.Session):
 # Permanent = this video will never have a transcript; stop asking.
 _PERMANENT = {"TranscriptsDisabled", "NoTranscriptFound", "VideoUnavailable",
               "VideoUnplayable", "AgeRestricted"}
+# Captionless-but-watchable → local MLX Whisper can still transcribe it.
+_ASRABLE = {"TranscriptsDisabled", "NoTranscriptFound"}
 
 
 def _transcript_classified(video_id: str, http_client: requests.Session) -> tuple[str | None, str]:
@@ -134,7 +137,7 @@ def main() -> int:
     seen = json.loads(seen_path.read_text()) if seen_path.exists() else {}
 
     handles = [h if h.startswith("@") else "@" + h for h in (args.channels or _channels())]
-    written = skipped = missed = attempts = blocks = 0
+    written = skipped = missed = attempts = blocks = asr_used = 0
     aborted = False
     with httpx.Client(cookies={"SOCS": "CAI"}) as client, \
             _TimeoutSession() as ts_client:  # consent-wall bypass + timeout guard
@@ -150,6 +153,19 @@ def main() -> int:
                     break
                 attempts += 1
                 txt, err = _transcript_classified(vid, ts_client)
+                asr = False
+                if not txt and err in _ASRABLE and _asr_available():
+                    # Captionless → local MLX Whisper fallback (see collect.py).
+                    # Budget ASR_MAX_PER_RUN per drip; over-budget videos stay
+                    # unseen and drip through on later nights. A failed ASR
+                    # falls through to seen-marking below — the caption API
+                    # already said permanent, so one shot per drip is enough.
+                    if asr_used >= ASR_MAX_PER_RUN:
+                        missed += 1
+                        continue  # leave unseen; a later drip picks it up
+                    asr_used += 1
+                    txt = _asr_transcript(vid)
+                    asr = txt is not None
                 if not txt:
                     missed += 1
                     if err in _PERMANENT:
@@ -172,6 +188,7 @@ def main() -> int:
                     f"stale_content: true\ncontent_date_review: {stale_year}\n"
                     if stale_year else ""
                 )
+                asr_fm = "asr: whisper-local\n" if asr else ""
                 body = (
                     f"---\n"
                     f"title: {safe_title}\n"
@@ -183,6 +200,7 @@ def main() -> int:
                     f"date: {meta['date']}\n"
                     f"has_digest: false\n"
                     f"backfill: true\n"
+                    f"{asr_fm}"
                     f"{stale_fm}"
                     f"tags: [youtube, finance, {_slug(handle)}]\n"
                     f"---\n\n"
@@ -204,7 +222,8 @@ def main() -> int:
             seen_path.write_text(json.dumps(seen, indent=2))
 
     print(f"backfill: {written} written, {skipped} already seen, {missed} missed "
-          f"({attempts} attempted{', ABORTED on IP block' if aborted else ''})")
+          f"({attempts} attempted, {asr_used} local-ASR"
+          f"{', ABORTED on IP block' if aborted else ''})")
     return 1 if aborted and not written else 0
 
 
