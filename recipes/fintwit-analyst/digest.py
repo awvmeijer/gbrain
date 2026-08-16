@@ -24,9 +24,10 @@ so the caller can fall back.
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sys
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import httpx
@@ -122,7 +123,34 @@ def _coverage_footer(total: int, dropped: list[str], ledger_date: str) -> str:
                          "stale; rerun recipes/creator-scorecard")
     else:
         lines.append("No scorecard ledger found — source calls are unweighted")
+    lines.append(_forge_heartbeat_line())
     return "\n".join(lines)
+
+
+FORGE_HEARTBEAT = Path.home() / ".forge2" / "heartbeat.json"
+FORGE_DARK_DAYS = 3  # three consecutive dark days is an incident, not a pause
+
+
+def _forge_heartbeat_line() -> str:
+    """Forge liveness in the daily digest (Forge execution plan §4B): the
+    substrate writes ~/.forge2/heartbeat.json every 10 minutes; this line is
+    the operator's earliest warning that Forge went dark."""
+    try:
+        beat = json.loads(FORGE_HEARTBEAT.read_text())
+        ts = datetime.fromisoformat(beat["ts"])
+        age = datetime.now(timezone.utc) - ts
+        last = beat.get("last_agent_run") or {}
+        ran = (f", last agent run: {last.get('agent')} ({last.get('status')})"
+               if last else "")
+        if age > timedelta(days=FORGE_DARK_DAYS):
+            return (f"INCIDENT: FORGE DARK — last heartbeat "
+                    f"{ts.isoformat(timespec='minutes')} ({age.days}d ago){ran}")
+        return (f"Forge: last ran {ts.isoformat(timespec='minutes')} "
+                f"({beat.get('events_total', '?')} events{ran})")
+    except FileNotFoundError:
+        return "INCIDENT: FORGE DARK — no heartbeat file has ever been written"
+    except (ValueError, KeyError) as exc:
+        return f"WARNING: Forge heartbeat unreadable ({exc!r})"
 
 
 def gather(ing: Path, days: int) -> tuple[list[tuple[str, str]], list[str]]:
