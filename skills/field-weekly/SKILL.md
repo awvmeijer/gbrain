@@ -43,3 +43,24 @@ give them the handful of papers worth opening, not a feed.
 3. For each theme, name the 1–2 papers worth opening + one line why.
 4. `think` a short "what to read this week" synthesis, cite every page. Optionally
    emit a digest section alongside the finance digest — same front door.
+
+## Output Format
+
+- **Read this week** — the 1–3 papers worth opening across all themes, each:
+  title, `papers/arxiv-…` slug, date, one line on why it matters to the user's
+  work. Group cross-overs (papers touching the group's own work) first.
+- **By theme** — 3–5 themes, most-relevant first; per theme, the 1–2 notable
+  papers with a one-line takeaway each.
+- **Thin week?** Say so — "quiet week in <category>" beats a stretched list.
+
+## Anti-Patterns
+
+- **Feed dump.** Listing every paper defeats the skill — the deliverable is the
+  handful worth opening.
+- **Un-cited summaries.** Every claim carries its `papers/…` slug; no summary
+  from memory of the field.
+- **Date-ordered walls.** Clustering by theme is the contract; a chronological
+  list is a bug.
+- **Relevance drift.** Ranking by general impressiveness instead of relevance
+  to air-quality / exposure / 3DREAMS@SG work.
+- **Manufacturing significance** in a thin week instead of saying it was quiet.

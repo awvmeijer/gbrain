@@ -61,3 +61,24 @@ proposed_by: todo-suggester
   paper deadline → the real date).
 - **Never create the Trello card here** — only the proposal. The gate + executor
   own the side effect (propose → approve → act).
+
+## Output Format
+
+- One `type: proposal` page per suggestion, exactly the shape above (all fields
+  required, `status: pending`, `proposed_by: todo-suggester`).
+- Plus a short human summary listing the proposals just filed: `<title> — due
+  <date> — evidence: <slug>`, grouped by source (filings, findings, papers,
+  meetings, stale loops), so the user can approve from one glance.
+- Nothing suggestable → say so; file zero proposals.
+
+## Anti-Patterns
+
+- **Direct side effects.** Creating a Trello card, editing a todo, or flipping
+  a proposal status from this skill breaks the propose→approve→act gate.
+- **Undated todos.** A suggestion without `due` is a wish, not a todo — derive
+  the date or don't file it.
+- **Evidence-free suggestions.** "You should probably review your positions"
+  with no cited page is noise; every proposal names its `target`.
+- **Re-proposing.** Check for an existing pending/approved proposal on the same
+  target before filing — duplicates erode trust in the gate.
+- **Volume.** Five dated, evidenced todos beat twenty maybes.

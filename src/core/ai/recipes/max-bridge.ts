@@ -21,20 +21,20 @@ export const maxBridge: Recipe = {
   implementation: 'openai-compatible',
   base_url_default: 'http://127.0.0.1:8789/v1',
   auth_env: {
-    required: [], // local shim, unauthenticated; resolveAuth supplies a dummy token
+    // Local shim, unauthenticated: defaultResolveAuth sends `Bearer
+    // unauthenticated` (the bridge ignores it). No resolveAuth override —
+    // the v0.32 IRON RULE reserves overrides for Azure alone.
+    required: [],
     optional: ['MAXBRIDGE_BASE_URL'],
     setup_url: 'https://github.com/awvmeijer/gbrain/blob/brains-port/sidecars/max-bridge/server.py',
-  },
-  // The OpenAI-compatible SDK requires *some* api key; the bridge ignores it.
-  resolveAuth() {
-    return { headerName: 'Authorization', token: 'Bearer local-max-bridge' };
   },
   touchpoints: {
     chat: {
       models: ['claude-sonnet', 'claude-opus', 'claude-haiku'],
       supports_tools: false, // bridge is text-only (SDK allowed_tools=[])
       supports_subagent_loop: false,
-      supports_prompt_cache: true,
+      // No supports_prompt_cache: Anthropic cache_control markers don't
+      // traverse an OpenAI-compatible shim, and the Max plan is flat-fee.
       max_context_tokens: 200000,
       cost_per_1m_input_usd: 0, // flat-fee Max plan; no metered cost
       cost_per_1m_output_usd: 0,

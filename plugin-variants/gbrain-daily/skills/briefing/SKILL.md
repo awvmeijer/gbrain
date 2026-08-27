@@ -39,10 +39,10 @@ This brain belongs to a hands-on investor whose live context is the **feeds**
 (X/fintwit, YouTube finance creators, Discord) and the skills built on them —
 not meetings/deals/CRM. For THIS brain, lead the briefing with, in order:
 
-1. **What needs you** — run `skills/what-needs-me` (pending proposals, decisions,
-   open loops). If nothing qualifies, say so plainly.
-2. **Markets read** — run `skills/fintwit-analyst` over the last day (tickers,
-   catalysts, what changed, source conflicts).
+1. **What needs you** — run the `what-needs-me` skill (host-side, not bundled;
+   pending proposals, decisions, open loops). If nothing qualifies, say so plainly.
+2. **Markets read** — run the `fintwit-analyst` skill (host-side, not bundled)
+   over the last day (tickers, catalysts, what changed, source conflicts).
 3. **This week's takeaway** — the latest reflection
    (`gbrain list --type reflection -n 1` → `gbrain get <slug>`), 1–2 lines.
 4. **Fresh in the brain** — pages updated in the last 24h

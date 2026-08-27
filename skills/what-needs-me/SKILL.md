@@ -57,12 +57,32 @@ items that need a human.
    gbrain think "From the brain's pending proposals + recent open loops, list ONLY what needs my attention or a decision now. For each: one line on what it is, WHY it needs me, and the suggested next step. Rank by urgency × importance. Attribute every item to its page. Skip anything purely informational."
    ```
 
-4. **Output shape:**
-   - **Decide / approve** — pending proposals + forks where the user must pick.
-   - **Reply / follow up** — threads or commitments awaiting the user.
-   - **Worth a look** — high-signal items that may need action soon (clearly
-     marked as not-yet-actionable).
-   - If nothing qualifies: say so plainly ("Nothing needs you right now.").
+4. **Shape the output** per the Output Format below.
+
+## Output Format
+
+Three sections, ranked within each by urgency × importance, ~10 items total:
+
+- **Decide / approve** — pending proposals + forks where the user must pick.
+  Each line: what it is → why it needs you → suggested next step → source page.
+- **Reply / follow up** — threads or commitments awaiting the user.
+- **Worth a look** — high-signal items that may need action soon (clearly
+  marked as not-yet-actionable).
+
+If nothing qualifies: say so plainly ("Nothing needs you right now.") — an
+empty result is a valid, honest answer.
+
+## Anti-Patterns
+
+- **Digest creep.** Informational items belong in `fintwit-analyst`, not here —
+  if there's no decision or action, it's out.
+- **Acting instead of surfacing.** Never flip a proposal's status or perform
+  the follow-up; this skill only points.
+- **Un-attributed items.** Every line links its page/proposal or it's dropped.
+- **Padding an empty day.** Manufacturing "attention items" to avoid an empty
+  answer trains the user to ignore the skill.
+- **Unbounded lists.** More than ~10 items means the ranking failed — cut,
+  don't scroll.
 
 ## Self-tuning (skillopt)
 

@@ -71,18 +71,37 @@ signal without scrolling.
    gbrain think "Across my fintwit X feed, finance YouTube creators, Telegram scanner channels, and Discord from the last day: group by theme, name every ticker with the source's direction + any level/catalyst, lead with what CHANGED, and call out where sources conflict. Treat the Telegram scanner ticker lists as a SCREEN (no direction) — the highest-signal items are OVERLAPS where a scanner-flagged ticker also has a directional take from an X/YouTube source; surface those first. Attribute every line. Do not treat mention volume as a signal."
    ```
 
-4. **Shape the output** as:
-   - **Scanner × conviction** — tickers that a Telegram scanner flagged AND an
-     X/YouTube source has a directional take on: `$SYM — screened by <scanner> +
-     <direction> (<source, date>): <thesis/level>`. This section leads when there
-     are overlaps; omit it when there are none (don't pad it with screen-only names).
-   - **What changed** — 3-6 bullets: new calls, reversals, conviction shifts.
-   - **By theme** — each ticker: `$SYM — <direction> (<source, date>): <level/catalyst/claim>`.
-   - **Conflicts** — disagreements between sources, both sides attributed.
-   - **Quiet/unusual** — a name getting unusual attention OR a usually-loud source going quiet (context, not a signal).
+4. **Shape the output** per the Output Format below.
 
 5. **Deliver.** Return the digest. When run by the daily cron it is posted to
    Discord; when run interactively, print it.
+
+## Output Format
+
+Sections in this order (omit an empty section rather than padding it):
+
+- **Scanner × conviction** — tickers that a Telegram scanner flagged AND an
+  X/YouTube source has a directional take on: `$SYM — screened by <scanner> +
+  <direction> (<source, date>): <thesis/level>`. Leads when there are overlaps;
+  omitted when there are none (never padded with screen-only names).
+- **What changed** — 3-6 bullets: new calls, reversals, conviction shifts.
+- **By theme** — each ticker: `$SYM — <direction> (<source, date>): <level/catalyst/claim>`.
+- **Conflicts** — disagreements between sources, both sides attributed.
+- **Quiet/unusual** — a name getting unusual attention OR a usually-loud source
+  going quiet (context, not a signal).
+
+## Anti-Patterns
+
+- **Mention-counting as signal.** "N sources mentioned $X" is never a reason to
+  act — report what was said and by whom, full stop.
+- **Un-attributed claims.** A ticker line without `(source, date)` is a bug.
+- **Averaging conflicts away.** Two sources disagreeing is the story; never
+  merge them into a mushy consensus.
+- **Treating scanner hits as calls.** A screen hit with no human thesis goes in
+  no section at all — only overlaps earn the lead.
+- **Padding.** An empty section is omitted, not filled with weak material.
+- **Advice drift.** Never phrase output as a recommendation ("buy", "trim");
+  this is a digest of what the follows said.
 
 ## Self-tuning (skillopt)
 

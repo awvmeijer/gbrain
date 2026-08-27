@@ -52,3 +52,24 @@ The `science-to-brain` recipe has already written the substrate:
    pickup worth a closer look — cite every page.
 4. Surface as a digest section (or a `what-needs-me` proposal if action is implied,
    e.g. "reviewer request", "collaboration signal").
+
+## Output Format
+
+- **Cross-over pickup** (leads) — new citations of the group's work from an
+  adjacent field: citing paper (slug, venue, date) → which group paper it cites
+  → one line on why the pickup is interesting.
+- **New from the group** — papers `authored_by` the group since the last run,
+  newest first, venue + date + slug.
+- **Citation activity** — other notable new `cited_by` edges, briefly.
+- Empty sections are omitted; a quiet week is reported as quiet.
+
+## Anti-Patterns
+
+- **Invented papers.** Every item cites a real `papers/…` / `author/…` page; a
+  claim with no page behind it is stated as such or dropped.
+- **Citation-count trumpeting.** Ten self-citations are worth less than one
+  genuinely adjacent pickup — never lead with volume.
+- **Burying the cross-over.** The adjacent-field pickup is the whole point;
+  putting it below a list of new preprints inverts the value.
+- **Acting on implied action.** A "reviewer request" signal becomes a
+  `what-needs-me` proposal — this skill never replies or commits on its own.

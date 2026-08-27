@@ -63,6 +63,33 @@ here it's a thick skill the dream cycle + skillopt keep sharpening.
 4. **Surface briefly.** Optionally post a 3-5 line summary to the user's channel;
    the full reflection lives at the page.
 
+## Output Format
+
+One `reflections/<iso-week>.md` page (frontmatter `type: reflection`, `week`,
+`created`, `tags: [reflection, finance]`) with these sections:
+
+- **Themes of the week** — what recurred and how attention shifted, with dates.
+- **Conviction shifts** — per source: watch→conviction moves and reversals.
+- **Calls that resolved** — confirmed or broken this week, attributed (accuracy
+  memory, not a trading signal).
+- **Engagement** — what the user flagged or acted on.
+- **Watching next week** — the short forward list.
+
+Plus an optional 3-5 line channel summary pointing at the page.
+
+## Anti-Patterns
+
+- **Re-digesting.** Restating the dailies is the failure mode — only week-level
+  signal earns a line.
+- **Manufactured insight.** A thin week written up as if it were rich poisons
+  the accuracy memory; "quiet week" is a fine reflection.
+- **Un-dated conviction claims.** "X turned bullish" without the dates of the
+  shift is unverifiable next month.
+- **Scorekeeping as advice.** Calls-that-played-out is a memory of source
+  accuracy, never a recommendation to follow anyone.
+- **Extra writes.** Exactly one page per week; touching feed pages or writing
+  multiple reflections is a bug.
+
 ## Self-tuning (skillopt)
 
 Tunable: what counts as week-level signal vs daily noise, and the
