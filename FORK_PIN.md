@@ -2,18 +2,49 @@
 
 This is a fork of [garrytan/gbrain](https://github.com/garrytan/gbrain), used as
 the base for a personal-memory rebuild ("Brains" features ported in). GBrain
-churns fast (~14 version bumps in 10 days, no usable release tags), so we **pin
-to a commit SHA** and rebase onto a vetted SHA on a schedule — never track
-`master` live.
+churns fast, so we **pin to a commit SHA** and rebase onto a vetted SHA on a
+schedule — never track `master` live. (Upstream now ships GitHub Releases and a
+moving `latest-stable` tag — that answers the original "no usable release tags"
+complaint and is the natural candidate for the next pin, but we still record
+the SHA it resolves to, never the moving tag itself.)
 
 ## Pinned base
-- **SHA:** `814258dd` — `v0.42.53.0 fix(sync,db): #2339 op_checkpoints …`
-- **Version:** 0.42.53.0
-- **Pinned:** 2026-06-29
-- **Why this SHA:** newest upstream `master` HEAD at fork-sync time; a version-tagged
-  release commit at the end of a `fix(sync,db)` cluster (the most-firefought
-  subsystem), per the migration plan's pin-selection gate. Vetted via
-  `gbrain doctor` + bundled E2E before committing work on top.
+- **SHA:** `77bb9d8c` — `v0.46.32.0 fix: wave-k community train — 54 contributor PRs absorbed …`
+- **Version:** 0.46.32.0
+- **Pinned:** 2026-08-27
+- **Why this SHA:** upstream `master` HEAD = the `latest-stable` tag at
+  fork-sync time (the ref upstream's own BOOTSTRAP_FOR_AGENTS flow installs
+  from). Vetted via typecheck + `bun run verify` (54/54) + unit suite +
+  Postgres engine-parity E2E (47/47) + live doctor/models-doctor/import-dedup
+  smokes before adoption.
+- **Previous pin:** `814258dd` / v0.42.53.0 (2026-06-29).
+
+## Upgrade notes from the 0.42.53 → 0.46.32 rebase (read before the next one)
+
+- **`~/.bun/bin/gbrain` is a `bun link` of THIS working tree** — checking out a
+  new base IS deploying it: the next cron tick (or `bun install` postinstall)
+  runs the new code against the live brain and auto-applies schema migrations.
+  Pause the `com.brains.*` timer jobs and take a `pg_dump` BEFORE the rebase
+  checkout, not before "installing the binary" (there is no separate install).
+- The live brain is **Postgres** (`postgresql://localhost/brain`) since
+  2026-07-12 — backups are `infra/pg-backup.sh` (nightly 02:30) + manual runs,
+  not PGLite file copies.
+- `com.brains.mcp` is the only long-running process holding gbrain code in
+  memory; `launchctl kickstart -k` it after any base change. Timer jobs load
+  fresh code per fire.
+- Model routing is config-plane, per tier (`models.tier.*`, `models.think`,
+  `search.reranker.model`) — re-verify with `gbrain models list` +
+  `gbrain models doctor` after upgrades; the 2026-06-29 A/B tiering
+  (deep=max-bridge, reasoning=qwen3, utility=qwen2.5, reranker=local
+  llama-server) is now persisted in DB config.
+- Upstream test contracts fork-added files must satisfy: skills need
+  `## Output Format` + `## Anti-Patterns` sections and an entry in either the
+  plugin bundle or `skills/plugin-exclusions.json`; `skills.lock.json` and the
+  committed `plugin/` + `plugin-variants/` trees are regenerated whenever a
+  skill changes; recipe env names must appear in the three `.codex-plugin/mcp.json`
+  env contracts; only Azure may override `resolveAuth`.
+- Unknown CLI flags are hard errors since v0.42.76 — strict-flag-audit the
+  cron scripts and skills (`--rerank` and `list -n` died in this range).
 
 ## Branch model
 - `master` — mirrors `upstream/master` (fast-forward only; no local commits).
