@@ -7,6 +7,9 @@
  */
 
 import { hybridSearchCached, stampContentFlags, stampUnverifiedExtractions } from '../search/hybrid.ts';
+// brains-port (retrieval self-poisoning fix) — config-plane synthesis
+// excludes for the keyword-only branch, which bypasses hybridSearch.
+import { resolveEffectiveExcludes } from '../search/source-boost.ts';
 import { looksConceptShaped, classifyQueryShape } from '../search/query-intent.ts';
 import {
   gradeRetrievalConfidence,
@@ -171,12 +174,17 @@ const search: Operation = {
         "Recency boost (per-prefix age decay, no mattering signal): 'off' | 'on' | 'strong'. " +
         'Omit and gbrain auto-detects. Independent of `salience`. Ignored on the keyword-only opt-out path.',
     },
+    // brains-port (retrieval self-poisoning fix) — opt back into synthesis
+    // pages (e.g. digests/) excluded via `search.exclude_slug_prefixes`
+    // config or GBRAIN_SEARCH_EXCLUDE, for this single query.
+    include_synthetic: { type: 'boolean', description: 'Re-include synthesis pages excluded via search.exclude_slug_prefixes / GBRAIN_SEARCH_EXCLUDE (default: false).' },
   },
   handler: async (ctx, p) => {
     const startedAt = Date.now();
     const queryText = p.query as string;
     const limit = (p.limit as number) || 20;
     const offset = (p.offset as number) || 0;
+    const includeSynthetic = (p.include_synthetic as boolean) === true;
     // #3985: validated multi-type filter, threaded into both branches below.
     const types = normalizeTypesParam(p.types);
     // #3800: snippet cap (param > subagent config default > full text).
@@ -203,7 +211,26 @@ const search: Operation = {
     const keywordOnly = (await ctx.engine.getConfig('search.mcp_keyword_only')) === 'true';
 
     if (keywordOnly) {
-      const raw = await ctx.engine.searchKeyword(queryText, { limit, offset, excludePrivate, ...(types ? { types } : {}), ...scope });
+      // brains-port — this branch bypasses hybridSearch, so resolve the
+      // config-plane synthesis excludes here; the engine's
+      // resolveHardExcludes() handles the env + default planes itself.
+      const cfgXsp = await ctx.engine.getConfig('search.exclude_slug_prefixes').catch(() => null);
+      const cfgPrefixes = typeof cfgXsp === 'string'
+        ? cfgXsp.split(',').map((s) => s.trim()).filter((s) => s.length > 0)
+        : [];
+      const kwExcludes = resolveEffectiveExcludes({
+        configPrefixes: cfgPrefixes,
+        includeSynthetic,
+      });
+      const raw = await ctx.engine.searchKeyword(queryText, {
+        limit,
+        offset,
+        excludePrivate,
+        ...(types ? { types } : {}),
+        ...scope,
+        exclude_slug_prefixes: kwExcludes.excludePrefixes,
+        include_slug_prefixes: kwExcludes.includePrefixes,
+      });
       const results = dedupResults(raw);
       // #3783 — every row here IS a keyword hit (direct FTS path); mark
       // before stamping so evidence still reads keyword_exact.
@@ -239,6 +266,8 @@ const search: Operation = {
       // #4415: agent-explicit recency + salience (same posture as `query`).
       salience: p.salience as 'off' | 'on' | 'strong' | undefined,
       recency: p.recency as 'off' | 'on' | 'strong' | undefined,
+      // brains-port — CLI `--include-synthetic` / MCP include_synthetic.
+      includeSynthetic,
       onMeta: (m) => { capturedMeta = m; },
     });
     stampDeepResearchIds(results);

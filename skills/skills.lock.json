@@ -25,7 +25,7 @@
   "brain-pdf/routing-eval.jsonl": "119e4fa113ea45783cee4499e63a729fdeecb4d9a45d47497754b4f5b21d0734",
   "brain-taxonomist/SKILL.md": "dea4557b540868ec2c56bf43ee7f63c5d03a22d4047cd0dfbeaf19adef334f60",
   "brain-taxonomist/routing-eval.jsonl": "8b485b3d735aace60be703854f0f2e9d97c52d52564efdaf7334a0c39e8d20ae",
-  "briefing/SKILL.md": "02e212f0b6b879cf0d4b46ac6e8ecad44c5f052e6c76d2102aee2752ef82dd37",
+  "briefing/SKILL.md": "a4f89e6ae49bfe363bc8df5921bdc7b2d2adc1706c314ea9f34c546176aa4aa0",
   "briefing/routing-eval.jsonl": "c056fea88f673e324d6a72cb70438cd6fcdbd09ec2cd036d44eb31a9ea6bf33d",
   "bulk-ingestion/MANIFEST-PATTERN.md": "0df53fdf8b59bf14601761f6c1cce413bb494f0d5ebc3e6fa96feccfda7e5737",
   "bulk-ingestion/SKILL.md": "bf23978d710d53884252b15f647212c7f59e7ca081b05aa2fb5a93941893f546",
@@ -81,7 +81,7 @@
   "fact-check/SKILL.md": "21a28e6cf6c5494e7c3e97dfa6bf6139b97c735fc229c974bbad89db4a2ff4a9",
   "fact-check/routing-eval.jsonl": "7519c6eada244813264b0df34ed67613e2d4404cfdf3cb209051b461749f5662",
   "field-weekly/SKILL.md": "d12f2f023c71134a7151ce279e99c2c1869adee1c2a70d483d6af702f2b45bb3",
-  "fintwit-analyst/SKILL.md": "17ff65f5cb0ebe33b99736b9503137c29312b2bbf3451a4e9f0be5a8d92cd4ee",
+  "fintwit-analyst/SKILL.md": "63f16950d89140c4c9c7d0dd7dfff563be06ec16026b2e3ea7266f74da15a4a7",
   "fintwit-analyst/routing-eval.jsonl": "6363c2a256f391df70916c6755a08808d81357964b6bd47ea324bf38dd1f0d14",
   "frontmatter-guard/SKILL.md": "a20fed7da1aecc38818f2b649df0ac3c8a218a742efbe2a774d3cea34a728e7d",
   "frontmatter-guard/routing-eval.jsonl": "243c28b04b557bac5360318c0f47bb6f1dd56d2f720aad3763b93fc0b2ea081e",
@@ -182,8 +182,8 @@
   "voice-note-ingest/SKILL.md": "145c02e636430abba5648e026aef77606d6ba2594285fbfee4f4dd4253cf833a",
   "voice-note-ingest/routing-eval.jsonl": "374aaec16fbde336d1e376edce89e51adc4ecaa93c13fb4a69b967ba299b8742",
   "webhook-transforms/SKILL.md": "b774293297af4d513c7efa92a79cf65b8438a714adafc16802b492613e679d17",
-  "weekly-reflection/SKILL.md": "e16fbdea7c97972ff722fff2d3809362ba505fc5005adbe01b36873981d5344c",
+  "weekly-reflection/SKILL.md": "d7cb2afb7366ac7503df9a91c81bbfa9ac67b2aca30a58715b6a0153a73d92b9",
   "weekly-reflection/routing-eval.jsonl": "bf0c315ec32686c2748b5d8e4ddc1eae8845aa9fd5b3838e24ed3e9fe136702a",
-  "what-needs-me/SKILL.md": "24c026be525600b4b98992ab95f8e38faf7358cbe835b2e7bc8a670b553cf0b9",
+  "what-needs-me/SKILL.md": "40d1eb9fa0cff8812ade7157c058373b95ea937db5149c6bf2ffedd95a39242e",
   "what-needs-me/routing-eval.jsonl": "641335975512ec31c8ed34b81abb0436736fcbb8cb4267d9f28596a9f1d35f34"
 }

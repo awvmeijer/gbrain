@@ -191,19 +191,37 @@ export function parseRecencyDecayYaml(parsed: unknown): RecencyDecayMap {
 }
 
 /**
- * Merge defaults + yaml + env + caller-supplied overrides into the effective
- * decay map. Later sources win. Empty entries are dropped.
+ * Merge defaults + yaml + config + env + caller-supplied overrides into the
+ * effective decay map. Later sources win. Empty entries are dropped.
+ *
+ * brains-port: `configTriples` is the `search.recency_decay` config-table
+ * value (same triple format as GBRAIN_RECENCY_DECAY). It slots between the
+ * yaml plane and the env plane so an env override still wins, matching the
+ * documented priority at the top of this file. Parse errors are swallowed
+ * here (return {}) — the config plane is validated loudly at
+ * `loadOverridesFromConfig` time in mode.ts; a malformed value that slips
+ * through must not take down the search hot path.
  */
 export function resolveRecencyDecayMap(opts: {
   yaml?: unknown;
+  configTriples?: string;
   envValue?: string;
   caller?: RecencyDecayMap;
 } = {}): RecencyDecayMap {
   const fromYaml = opts.yaml !== undefined ? parseRecencyDecayYaml(opts.yaml) : {};
+  let fromConfig: RecencyDecayMap = {};
+  if (opts.configTriples !== undefined) {
+    try {
+      fromConfig = parseRecencyDecayEnv(opts.configTriples);
+    } catch {
+      fromConfig = {};
+    }
+  }
   const fromEnv = parseRecencyDecayEnv(opts.envValue ?? process.env.GBRAIN_RECENCY_DECAY);
   return {
     ...DEFAULT_RECENCY_DECAY,
     ...fromYaml,
+    ...fromConfig,
     ...fromEnv,
     ...(opts.caller ?? {}),
   };

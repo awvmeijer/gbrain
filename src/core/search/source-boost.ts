@@ -132,3 +132,38 @@ export function resolveHardExcludes(
   }
   return Array.from(union);
 }
+
+/**
+ * brains-port (retrieval self-poisoning fix) — resolve the effective
+ * exclude/include prefix sets for one hybrid-search call, merging the config
+ * plane (`search.exclude_slug_prefixes`, threaded via the resolved mode
+ * bundle) with the per-call SearchOpts fields. The result feeds BOTH the
+ * engines' `resolveHardExcludes()` (via SearchOpts) and the query-cache
+ * knobsHash `hardExcludes` context (#2825 port), so the two always agree.
+ *
+ * `includeSynthetic` (CLI `--include-synthetic`) re-includes the OPERATOR's
+ * exclusion-policy planes — the config prefixes AND GBRAIN_SEARCH_EXCLUDE —
+ * for this single call. DEFAULT_HARD_EXCLUDES (test/, attachments/, .raw/)
+ * stay excluded: they are noise, not policy.
+ */
+export function resolveEffectiveExcludes(args: {
+  perCallExclude?: string[];
+  perCallInclude?: string[];
+  configPrefixes?: string[];
+  includeSynthetic?: boolean;
+  envValue?: string;
+}): { excludePrefixes: string[] | undefined; includePrefixes: string[] | undefined } {
+  const cfg = args.configPrefixes ?? [];
+  const excludePrefixes = args.includeSynthetic
+    ? args.perCallExclude
+    : cfg.length > 0
+      ? [...new Set([...(args.perCallExclude ?? []), ...cfg])]
+      : args.perCallExclude;
+  let includePrefixes = args.perCallInclude;
+  if (args.includeSynthetic) {
+    const envExcludes = parseHardExcludesEnv(args.envValue ?? process.env.GBRAIN_SEARCH_EXCLUDE);
+    const merged = new Set([...(args.perCallInclude ?? []), ...cfg, ...envExcludes]);
+    if (merged.size > 0) includePrefixes = Array.from(merged);
+  }
+  return { excludePrefixes, includePrefixes };
+}

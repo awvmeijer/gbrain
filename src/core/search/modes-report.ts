@@ -55,6 +55,10 @@ export const KNOB_DESCRIPTIONS: Record<keyof ModeBundle, string> = {
   // v0.43 relational recall
   relationalRetrieval: 'Typed-edge relational recall arm (relational queries walk the graph; no-op otherwise)',
   relational_retrieval_depth: 'Max hops for relational traversal (1..3, 2 default)',
+  // brains-port — synthesis-page exclusion + recency defaults
+  exclude_slug_prefixes: 'Slug prefixes excluded from default retrieval (synthesis pages, e.g. digests/); --include-synthetic opts back in',
+  recency_default: 'Fallback recency mode (off|on|strong) when neither caller nor query intent picked one',
+  recency_decay: 'Per-prefix recency decay overrides (prefix:halflifeDays:coefficient,...)',
 };
 
 export interface SearchModesReport {
@@ -92,6 +96,11 @@ export async function buildModesReport(engine: BrainEngine): Promise<SearchModes
     'autocut_min_top',
     // #3621 — the documented autocut floor, surfaced alongside the weak-top floor.
     'autocut_min_keep',
+    // brains-port — synthesis-page exclusion + recency defaults surfaced so
+    // config drift on the new keys is legible in `gbrain search modes`.
+    'exclude_slug_prefixes',
+    'recency_default',
+    'recency_decay',
   ];
 
   const attributions = {} as SearchModesReport['resolved'];

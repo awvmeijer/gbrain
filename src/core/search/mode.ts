@@ -31,6 +31,8 @@ import { getRecipe } from '../ai/recipes/index.ts';
 // (ai/defaults.ts — a leaf module, no SDK loads). The three bundles below
 // resolve through it so the September default swap is a one-line change.
 import { LEGACY_DEFAULT_RERANKER_MODEL } from '../ai/defaults.ts';
+// brains-port — validate `search.recency_decay` config values at load time.
+import { parseRecencyDecayEnv } from './recency-decay.ts';
 
 /**
  * Look up the `reranker.default_timeout_ms` declared by the resolved
@@ -322,6 +324,36 @@ export interface ModeBundle {
   relationalRetrieval: boolean;
   /** v0.43 — max hops for relational traversal. Default 2, hard-capped at 3. */
   relational_retrieval_depth: number;
+  /**
+   * brains-port (retrieval self-poisoning fix) — config-plane slug-prefix
+   * hard-excludes for synthesis pages (e.g. `digests/`, `scorecards/`).
+   * Merged into the per-call `exclude_slug_prefixes` set that
+   * `resolveHardExcludes()` (source-boost.ts) unions with
+   * DEFAULT_HARD_EXCLUDES + GBRAIN_SEARCH_EXCLUDE. Undefined for all three
+   * bundles — behavior changes ONLY when `search.exclude_slug_prefixes` is
+   * set (comma-separated prefixes). Per-call `include_slug_prefixes` /
+   * `--include-synthetic` opts back in.
+   */
+  exclude_slug_prefixes: string[] | undefined;
+  /**
+   * brains-port — default recency mode for corpora where freshness is the
+   * signal (news-heavy). Applied ONLY as the final fallback when neither the
+   * caller nor the query-intent heuristics picked a recency mode; an explicit
+   * per-call `recency: 'off'` still wins. Undefined for all three bundles =
+   * exactly the pre-patch behavior. Config: `search.recency_default`
+   * (off|on|strong); env: GBRAIN_RECENCY_DEFAULT.
+   */
+  recency_default: 'off' | 'on' | 'strong' | undefined;
+  /**
+   * brains-port — config-plane per-prefix recency decay overrides, same
+   * triple format as GBRAIN_RECENCY_DECAY (`prefix:halflifeDays:coefficient,...`).
+   * Feeds resolveRecencyDecayMap() between the yaml and env planes. The boost
+   * formula (recency-decay.ts / applyRecencyBoost): factor =
+   * 1 + strength × coefficient × halflife / (halflife + days_old); undated
+   * pages and halflife=0 (evergreen) prefixes keep factor 1.0. Undefined =
+   * shipped defaults. Config: `search.recency_decay`.
+   */
+  recency_decay: string | undefined;
 }
 
 /**
@@ -379,6 +411,10 @@ export const MODE_BUNDLES: Readonly<Record<SearchMode, Readonly<ModeBundle>>> = 
     autocut_jump: 0.2,
     autocut_min_top: 0.35,
     autocut_min_keep: 1,
+    // brains-port — config-gated only; no bundle default (see ModeBundle docs).
+    exclude_slug_prefixes: undefined,
+    recency_default: undefined,
+    recency_decay: undefined,
   }),
   balanced: Object.freeze({
     cache_enabled: true,
@@ -441,6 +477,10 @@ export const MODE_BUNDLES: Readonly<Record<SearchMode, Readonly<ModeBundle>>> = 
     autocut_jump: 0.2,
     autocut_min_top: 0.35,
     autocut_min_keep: 1,
+    // brains-port — config-gated only; no bundle default (see ModeBundle docs).
+    exclude_slug_prefixes: undefined,
+    recency_default: undefined,
+    recency_decay: undefined,
   }),
   tokenmax: Object.freeze({
     cache_enabled: true,
@@ -496,6 +536,10 @@ export const MODE_BUNDLES: Readonly<Record<SearchMode, Readonly<ModeBundle>>> = 
     autocut_jump: 0.2,
     autocut_min_top: 0.35,
     autocut_min_keep: 1,
+    // brains-port — config-gated only; no bundle default (see ModeBundle docs).
+    exclude_slug_prefixes: undefined,
+    recency_default: undefined,
+    recency_decay: undefined,
   }),
 });
 
@@ -555,6 +599,10 @@ export interface SearchKeyOverrides {
   autocut_jump?: number;
   autocut_min_top?: number;
   autocut_min_keep?: number;
+  // brains-port — synthesis-page exclusion + recency defaults (config plane).
+  exclude_slug_prefixes?: string[];
+  recency_default?: 'off' | 'on' | 'strong';
+  recency_decay?: string;
 }
 
 /**
@@ -609,6 +657,12 @@ export interface SearchPerCallOpts {
   // v0.43 — relational recall per-call overrides.
   relationalRetrieval?: boolean;
   relational_retrieval_depth?: number;
+  // brains-port — per-call excludes ride SearchOpts.exclude_slug_prefixes
+  // (engine plane), not the mode resolver; these mirror the config keys so
+  // library callers can override the resolved bundle if they need to.
+  exclude_slug_prefixes?: string[];
+  recency_default?: 'off' | 'on' | 'strong';
+  recency_decay?: string;
 }
 
 /**
@@ -708,6 +762,10 @@ export function resolveSearchMode(input: ResolveSearchModeInput): ResolvedSearch
     // v0.43 — relational recall resolved via the same pick chain.
     relationalRetrieval: pick('relationalRetrieval'),
     relational_retrieval_depth: pick('relational_retrieval_depth'),
+    // brains-port — synthesis exclusion + recency defaults via the same chain.
+    exclude_slug_prefixes: pick('exclude_slug_prefixes'),
+    recency_default: pick('recency_default'),
+    recency_decay: pick('recency_decay'),
     resolved_mode,
     mode_valid: valid,
   };
@@ -1378,6 +1436,35 @@ export function loadOverridesFromConfig(
     if (Number.isFinite(n) && n >= 1 && n <= 3) out.relational_retrieval_depth = n;
   }
 
+  // brains-port — synthesis-page exclusion + recency defaults.
+  // `search.exclude_slug_prefixes`: comma-separated slug prefixes (e.g.
+  // "digests/,scorecards/"). Empty entries dropped; an all-empty value
+  // falls through (no override).
+  const xsp = get('search.exclude_slug_prefixes');
+  if (xsp !== undefined) {
+    const prefixes = xsp.split(',').map((s) => s.trim()).filter((s) => s.length > 0);
+    if (prefixes.length > 0) out.exclude_slug_prefixes = prefixes;
+  }
+  // `search.recency_default`: off|on|strong. Anything else falls through
+  // (silent, matching the floor_ratio convention above).
+  const rcd = get('search.recency_default');
+  if (rcd !== undefined) {
+    const v = rcd.trim().toLowerCase();
+    if (v === 'off' || v === 'on' || v === 'strong') out.recency_default = v;
+  }
+  // `search.recency_decay`: GBRAIN_RECENCY_DECAY triple format. Validated
+  // here (loud parse, quiet fallback) so a malformed value never reaches the
+  // search hot path; resolveRecencyDecayMap re-parses defensively.
+  const rcm = get('search.recency_decay');
+  if (rcm !== undefined && rcm.trim().length > 0) {
+    try {
+      parseRecencyDecayEnv(rcm);
+      out.recency_decay = rcm;
+    } catch {
+      // Malformed → fall through to defaults (documented in the key's README).
+    }
+  }
+
   return out;
 }
 
@@ -1424,6 +1511,10 @@ export const SEARCH_MODE_CONFIG_KEYS: ReadonlyArray<string> = Object.freeze([
   'search.autocut_jump',
   'search.autocut_min_top',
   'search.autocut_min_keep',
+  // brains-port — synthesis-page exclusion + recency defaults
+  'search.exclude_slug_prefixes',
+  'search.recency_default',
+  'search.recency_decay',
 ]);
 
 /**
@@ -1469,6 +1560,14 @@ export async function loadSearchModeConfig(
   SEARCH_MODE_CONFIG_KEYS.forEach((key, i) => {
     if (overrideValues[i] !== undefined) configMap[key] = overrideValues[i];
   });
+
+  // brains-port — env plane for the recency default (mirrors
+  // GBRAIN_SEARCH_EXCLUDE's role for excludes): lets an operator or an eval
+  // run flip recency without touching the config table. Env wins over the
+  // config-table value; both lose to per-call opts downstream.
+  if (process.env.GBRAIN_RECENCY_DEFAULT !== undefined) {
+    configMap['search.recency_default'] = process.env.GBRAIN_RECENCY_DEFAULT;
+  }
 
   return {
     mode,

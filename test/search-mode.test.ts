@@ -54,6 +54,14 @@ describe('SEARCH_MODES + MODE_BUNDLES canonical shape', () => {
   // contextual_retrieval to its tier value.
   const CR_DISABLED_DEFAULT = { contextual_retrieval_disabled: false };
 
+  // brains-port — synthesis-page exclusion + recency defaults: config-gated
+  // only, undefined in all three bundles (no default behavior change).
+  const BRAINS_PORT_DEFAULTS = {
+    exclude_slug_prefixes: undefined,
+    recency_default: undefined,
+    recency_decay: undefined,
+  };
+
   test('conservative bundle values are canonical', () => {
     expect(MODE_BUNDLES.conservative).toEqual({
       cache_enabled: true,
@@ -84,6 +92,7 @@ describe('SEARCH_MODES + MODE_BUNDLES canonical shape', () => {
       // v0.43 — relational recall OFF for conservative.
       relationalRetrieval: false,
       relational_retrieval_depth: 2,
+      ...BRAINS_PORT_DEFAULTS,
     });
   });
 
@@ -120,6 +129,7 @@ describe('SEARCH_MODES + MODE_BUNDLES canonical shape', () => {
       // v0.43 — relational recall ON for balanced.
       relationalRetrieval: true,
       relational_retrieval_depth: 2,
+      ...BRAINS_PORT_DEFAULTS,
     });
   });
 
@@ -154,6 +164,7 @@ describe('SEARCH_MODES + MODE_BUNDLES canonical shape', () => {
       // v0.43 — relational recall ON for tokenmax.
       relationalRetrieval: true,
       relational_retrieval_depth: 2,
+      ...BRAINS_PORT_DEFAULTS,
     });
   });
 

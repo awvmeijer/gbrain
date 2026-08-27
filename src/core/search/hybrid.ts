@@ -22,7 +22,9 @@ import type {
 import { embed, embedQuery } from '../embedding.ts';
 import { registerBackgroundWorkDrainer } from '../background-work.ts';
 import { resolveEmbeddingColumn, isCacheSafe } from './embedding-column.ts';
-import { resolveHardExcludes } from './source-boost.ts';
+// brains-port — resolveEffectiveExcludes merges the config-plane synthesis
+// excludes (`search.exclude_slug_prefixes`) with the per-call fields.
+import { resolveHardExcludes, resolveEffectiveExcludes } from './source-boost.ts';
 import {
   resolveAdaptiveReturn,
   applyAdaptiveReturn,
@@ -996,6 +998,14 @@ export interface HybridSearchOpts extends SearchOpts {
    * public contract.
    */
   _telemetryCacheStatus?: 'miss' | 'disabled';
+  /**
+   * brains-port (retrieval self-poisoning fix) — re-include synthesis pages
+   * (config `search.exclude_slug_prefixes` + GBRAIN_SEARCH_EXCLUDE planes)
+   * for this single call. CLI: `gbrain search --include-synthetic`.
+   * DEFAULT_HARD_EXCLUDES stay excluded. See source-boost.ts
+   * resolveEffectiveExcludes().
+   */
+  includeSynthetic?: boolean;
 }
 
 /**
@@ -1220,6 +1230,16 @@ export async function hybridSearch(
   // on the first query of a fresh process before the config was applied.
   const detail = opts?.detail ?? suggestions.suggestedDetail;
   const detailResolved: 'low' | 'medium' | 'high' | null = detail ?? null;
+  // brains-port (retrieval self-poisoning fix): resolve the effective
+  // exclude/include prefix sets ONCE (config plane + per-call +
+  // --include-synthetic). Feeds searchOpts below and the relational-arm
+  // filter; the cached wrapper computes the same value for the cache key.
+  const effectiveExcludes = resolveEffectiveExcludes({
+    perCallExclude: opts?.exclude_slug_prefixes,
+    perCallInclude: opts?.include_slug_prefixes,
+    configPrefixes: resolvedMode.exclude_slug_prefixes,
+    includeSynthetic: opts?.includeSynthetic,
+  });
   const searchOpts: SearchOpts = {
     limit: innerLimit,
     detail,
@@ -1272,6 +1292,16 @@ export async function hybridSearch(
         vectorPoolUnderfill = { escalations: m.escalations, innerLimit: m.innerLimit };
       }
     },
+    // brains-port (retrieval self-poisoning fix): thread the per-call
+    // exclusion fields (previously DROPPED by this explicit-pick rebuild)
+    // AND merge the config-plane synthesis excludes
+    // (`search.exclude_slug_prefixes` via the resolved mode bundle) so the
+    // engines' resolveHardExcludes() sees them at SQL build time. Applies
+    // identically to keyword + every vector arm (they all spread this
+    // object) — engine parity preserved with zero engine diff.
+    exclude_slugs: opts?.exclude_slugs,
+    exclude_slug_prefixes: effectiveExcludes.excludePrefixes,
+    include_slug_prefixes: effectiveExcludes.includePrefixes,
   };
   let vectorPoolUnderfill: { escalations: number; innerLimit: number } | undefined;
   // Track what actually ran for the optional onMeta callback (v0.25.0).
@@ -1383,7 +1413,7 @@ export async function hybridSearch(
   // different mode than the stored results used.
   const salienceMode: 'off' | 'on' | 'strong' = resolveEffectiveSalience(opts, suggestions);
   const recencyMode: 'off' | 'on' | 'strong' =
-    resolveEffectiveRecency(opts, suggestions, intentWeightingOn);
+    resolveEffectiveRecency(opts, suggestions, intentWeightingOn, resolvedMode.recency_default);
   const postFusionOpts: PostFusionOpts = {
     applyBacklinks: true,
     salience: salienceMode,
@@ -1402,6 +1432,17 @@ export async function hybridSearch(
     // The raw query drives the matcher; default factor when the knob is unset.
     query,
     titleBoost: resolvedMode.title_boost,
+    // brains-port — thread the RESOLVED decay map (defaults < config
+    // `search.recency_decay` < GBRAIN_RECENCY_DECAY env < caller) into the
+    // post-fusion recency stage. Pre-patch this stage used
+    // DEFAULT_RECENCY_DECAY unconditionally, so the env/config planes
+    // documented in recency-decay.ts never reached interactive search.
+    // Boost formula (applyRecencyBoost): score ×= 1 + strength ×
+    // coefficient × halflife / (halflife + days_old); undated pages and
+    // evergreen (halflife=0) prefixes are untouched.
+    decayMap: (await import('./recency-decay.ts')).resolveRecencyDecayMap({
+      configTriples: resolvedMode.recency_decay,
+    }),
   };
 
   // v0.43 — build the relational recall arm ONCE here, before any return
@@ -1423,6 +1464,21 @@ export async function hybridSearch(
       excludePrivate: opts?.excludePrivate,
       onMeta: opts?.onRelationalMeta,
     });
+    // brains-port — the relational arm queries the edge graph directly and
+    // bypasses the engines' hard-exclude SQL clause. Apply the same resolved
+    // exclusion here so an excluded synthesis page can't re-enter through a
+    // typed edge.
+    if (relationalList.length > 0) {
+      const hx = resolveHardExcludes(
+        effectiveExcludes.excludePrefixes,
+        effectiveExcludes.includePrefixes,
+      );
+      if (hx.length > 0) {
+        relationalList = relationalList.filter(
+          (r) => !hx.some((p) => r.slug.startsWith(p)),
+        );
+      }
+    }
   }
 
   // Skip vector search entirely if the gateway has no embedding provider configured (Codex C3).
@@ -2243,6 +2299,14 @@ function resolveEffectiveRecency(
   opts: HybridSearchOpts | undefined,
   suggestions: QuerySuggestions,
   intentWeightingOn: boolean,
+  // brains-port — `search.recency_default` (config / GBRAIN_RECENCY_DEFAULT
+  // env, threaded via the resolved mode bundle): the FINAL fallback, firing
+  // only when the caller left recency unspecified AND neither the legacy
+  // heuristic nor the intent classifier suggested a mode. An explicit
+  // per-call `recency: 'off'` / recencyBoost 0 still wins. Lives HERE (not
+  // inline at a call site) so the rec= cache key part resolves through the
+  // identical chain — the wave-g invariant this helper exists to protect.
+  recencyDefault?: 'off' | 'on' | 'strong',
 ): 'off' | 'on' | 'strong' {
   const legacyRecency: 'off' | 'on' | 'strong' | undefined =
     opts?.recencyBoost === 2 ? 'strong' :
@@ -2257,7 +2321,7 @@ function resolveEffectiveRecency(
     ?? legacyRecency
     ?? (suggestions.suggestedRecency !== 'off'
         ? suggestions.suggestedRecency
-        : (intentRecency ?? suggestions.suggestedRecency))
+        : (intentRecency ?? recencyDefault ?? suggestions.suggestedRecency))
   );
 }
 
@@ -2349,6 +2413,17 @@ export async function hybridSearchCached(
 
   // Cache key carries the column + provider so different embedding spaces
   // never collide on the same `(source_id, query_text)` row.
+  // brains-port (#2825 port) — fold the resolved hard-exclude prefix list
+  // (defaults ∪ GBRAIN_SEARCH_EXCLUDE ∪ config/per-call exclude_slug_prefixes,
+  // minus include_slug_prefixes — exactly what the engines' query-build path
+  // resolves) into the cache key so a row written under one exclude policy
+  // can't be served to a lookup under another.
+  const cachedEffectiveExcludes = resolveEffectiveExcludes({
+    perCallExclude: opts?.exclude_slug_prefixes,
+    perCallInclude: opts?.include_slug_prefixes,
+    configPrefixes: resolvedForCache.exclude_slug_prefixes,
+    includeSynthetic: opts?.includeSynthetic,
+  });
   const cacheKnobsHash = knobsHash(resolvedForCache, {
     embeddingColumn: resolvedColCached.name,
     embeddingModel: resolvedColCached.embeddingModel,
@@ -2357,7 +2432,10 @@ export async function hybridSearchCached(
     // include_slug_prefixes — exactly what the engines' query-build path
     // resolves) into the cache key so a row written under one exclude
     // policy can't be served to a lookup under another.
-    hardExcludes: resolveHardExcludes(opts?.exclude_slug_prefixes, opts?.include_slug_prefixes),
+    hardExcludes: resolveHardExcludes(
+      cachedEffectiveExcludes.excludePrefixes,
+      cachedEffectiveExcludes.includePrefixes,
+    ),
     // #3515 — fold the EFFECTIVE detail level into the cache key. detail
     // gates dedup, chunk-source filtering, and the compiled_truth boost, so
     // a `--detail low` write (compiled-truth-only result set) must never be
@@ -2371,7 +2449,9 @@ export async function hybridSearchCached(
     // write must never serve a salience:'off' lookup of the same query.
     // Resolved by the SAME chain bare hybridSearch uses (helpers above).
     salience: resolveEffectiveSalience(opts, cacheSuggestions),
-    recency: resolveEffectiveRecency(opts, cacheSuggestions, resolvedForCache.intentWeighting),
+    recency: resolveEffectiveRecency(
+      opts, cacheSuggestions, resolvedForCache.intentWeighting, resolvedForCache.recency_default,
+    ),
     // #4415 (wave-g, v=24) — fold the applied intent-pattern config
     // fingerprint: a `search.intent_patterns` edit changes classification
     // (and thus results), so it must change the key immediately instead of
@@ -2446,6 +2526,17 @@ export async function hybridSearchCached(
   // original wholesale skip disabled the semantic cache for every remote MCP
   // caller (excludePrivate=true is their default) — exactly the
   // highest-volume beneficiaries of the ~50% cache savings.
+  // brains-port — when a config/env-plane recency DECAY MAP is active
+  // (`search.recency_decay` / GBRAIN_RECENCY_DECAY), skip the cache: the
+  // decay map reshapes cached result scores but is not part of knobsHash,
+  // so an operator edit could keep serving old-map rows for the TTL. Same
+  // interim pattern as adaptive return; folding the map fingerprint into
+  // knobsHash is the follow-up that lets decay-tuned calls cache safely.
+  // (`search.recency_default` needs no skip — it resolves through
+  // resolveEffectiveRecency, which the rec= key part already folds.)
+  const recencyConfigActive =
+    resolvedForCache.recency_decay !== undefined ||
+    process.env.GBRAIN_RECENCY_DECAY !== undefined;
   const skipCache =
     !cache.isEnabled() ||
     (opts?.walkDepth ?? 0) > 0 ||
@@ -2455,6 +2546,7 @@ export async function hybridSearchCached(
     dateFiltered ||
     typeFiltered ||
     pagedRequest;
+    recencyConfigActive;
 
   let cacheStatus: 'hit' | 'miss' | 'disabled' = skipCache ? 'disabled' : 'miss';
   let cacheSimilarity: number | undefined;

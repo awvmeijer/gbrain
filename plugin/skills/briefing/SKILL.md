@@ -44,9 +44,9 @@ not meetings/deals/CRM. For THIS brain, lead the briefing with, in order:
 2. **Markets read** — run the `fintwit-analyst` skill (host-side, not bundled)
    over the last day (tickers, catalysts, what changed, source conflicts).
 3. **This week's takeaway** — the latest reflection
-   (`gbrain list --type reflection -n 1` → `gbrain get <slug>`), 1–2 lines.
+   (`gbrain list --type reflection --limit 1` → `gbrain get <slug>`), 1–2 lines.
 4. **Fresh in the brain** — pages updated in the last 24h
-   (`gbrain list -n 20`), highest-signal first.
+   (`gbrain list --limit 20`), highest-signal first.
 
 The meetings / active-deals / people-in-play sections below are GBrain's generic
 template — include them only if such pages actually exist in this brain
