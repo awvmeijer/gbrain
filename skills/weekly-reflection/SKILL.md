@@ -44,8 +44,8 @@ here it's a thick skill the dream cycle + skillopt keep sharpening.
 1. **Gather the week.** Pull the week's material across feeds + any decisions:
 
    ```bash
-   gbrain list --tag finance -n 200          # this week's feed pages
-   gbrain query "this week's recurring tickers, themes, conviction shifts, calls that played out" --rerank
+   gbrain list --tag finance --limit 200          # this week's feed pages
+   gbrain query "this week's recurring tickers, themes, conviction shifts, calls that played out"
    ```
 
 2. **Reflect** with `think` (deep tier → Claude via the Max bridge):

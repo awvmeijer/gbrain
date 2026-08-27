@@ -55,7 +55,7 @@ signal without scrolling.
    reranked retrieval path:
 
    ```bash
-   gbrain query "tickers, catalysts, market themes, calls" --rerank
+   gbrain query "tickers, catalysts, market themes, calls"
    gbrain list --tag finance           # recent x/youtube/discord pages
    ```
 

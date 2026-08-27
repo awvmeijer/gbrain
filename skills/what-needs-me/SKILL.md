@@ -48,7 +48,7 @@ items that need a human.
    from the feeds (`fintwit-analyst` flags these), commitments/“I’ll look into X”.
 
    ```bash
-   gbrain query "open question, decision needed, follow up, conflicting calls, to-do" --rerank
+   gbrain query "open question, decision needed, follow up, conflicting calls, to-do"
    ```
 
 3. **Synthesize & rank** with `think` (deep tier → Claude via the Max bridge):
