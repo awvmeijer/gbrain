@@ -1,0 +1,351 @@
+{
+  "label": "after",
+  "timestamp": "2026-08-10T10:57:20.211078+00:00",
+  "env": {
+    "GBRAIN_SEARCH_EXCLUDE": "digests/",
+    "GBRAIN_RECENCY_DEFAULT": "on",
+    "GBRAIN_RECENCY_DECAY": null
+  },
+  "aggregate": {
+    "n_queries": 15,
+    "hit@1": 0.8,
+    "hit@5": 0.8666666666666667,
+    "hit@10": 0.9333333333333333,
+    "mrr": 0.8428571428571429,
+    "poison_hits_total": 0,
+    "queries_with_poison": 0,
+    "median_age_temporal_top5": 10.5
+  },
+  "per_query": [
+    {
+      "id": "scanner-latest",
+      "query": "latest telegram technical scanner tickers",
+      "temporal": true,
+      "n_results": 10,
+      "rank_first_expected": 1,
+      "hit@1": true,
+      "hit@5": true,
+      "hit@10": true,
+      "rr": 1.0,
+      "poison_hits_top10": 0,
+      "poison_slugs": [],
+      "median_age_days_top5": 15,
+      "top5": [
+        "telegram/1-technical-scanner/2026-07-26",
+        "telegram/1-technical-scanner/2026-07-25",
+        "telegram/1-technical-scanner/2026-07-27",
+        "telegram/1-technical-scanner/2026-08-06",
+        "telegram/1-technical-scanner/2026-07-21"
+      ],
+      "rc": 0
+    },
+    {
+      "id": "scanner-fundamental",
+      "query": "fundamental scanner stock picks",
+      "temporal": true,
+      "n_results": 10,
+      "rank_first_expected": 7,
+      "hit@1": false,
+      "hit@5": false,
+      "hit@10": true,
+      "rr": 0.14285714285714285,
+      "poison_hits_top10": 0,
+      "poison_slugs": [],
+      "median_age_days_top5": 9.5,
+      "top5": [
+        "youtube/humbledtraderofficial/ygpivs8bnlw",
+        "youtube/humbledtraderofficial/e69zes9xli4",
+        "telegram/1-technical-scanner/2026-07-30",
+        "youtube/humbledtraderofficial/e69zes9xli4",
+        "telegram/1-technical-scanner/2026-08-02"
+      ],
+      "rc": 0
+    },
+    {
+      "id": "scanner-overlaps",
+      "query": "scanner flagged tickers overlap with directional sources",
+      "temporal": true,
+      "n_results": 10,
+      "rank_first_expected": 1,
+      "hit@1": true,
+      "hit@5": true,
+      "hit@10": true,
+      "rr": 1.0,
+      "poison_hits_top10": 0,
+      "poison_slugs": [],
+      "median_age_days_top5": 10.5,
+      "top5": [
+        "youtube/humbledtraderofficial/iqvnryfzzd4",
+        "telegram/1-technical-scanner/2026-08-08",
+        "telegram/1-technical-scanner/2026-08-04",
+        "telegram/1-technical-scanner/2026-07-25",
+        "telegram/1-technical-scanner/2026-07-26"
+      ],
+      "rc": 0
+    },
+    {
+      "id": "nbis-earnings",
+      "query": "NBIS Nebius earnings expectations",
+      "temporal": true,
+      "n_results": 10,
+      "rank_first_expected": 1,
+      "hit@1": true,
+      "hit@5": true,
+      "hit@10": true,
+      "rr": 1.0,
+      "poison_hits_top10": 0,
+      "poison_slugs": [],
+      "median_age_days_top5": 14,
+      "top5": [
+        "youtube/funofinvesting/qqsifitvng0",
+        "youtube/endicottinvests/856pry51q50",
+        "x/daniel_koss/2026-07-27",
+        "youtube/endicottinvests/_4gkpn4_ss0",
+        "youtube/endicottinvests/ldkdrypk3lu"
+      ],
+      "rc": 0
+    },
+    {
+      "id": "nbis-couch",
+      "query": "what did couch investor say about NBIS",
+      "temporal": false,
+      "n_results": 10,
+      "rank_first_expected": 1,
+      "hit@1": true,
+      "hit@5": true,
+      "hit@10": true,
+      "rr": 1.0,
+      "poison_hits_top10": 0,
+      "poison_slugs": [],
+      "median_age_days_top5": 12,
+      "top5": [
+        "x/couch_investor/2026-07-25",
+        "x/daniel_koss/2026-08-07",
+        "x/couch_investor/2026-07-26",
+        "x/yianisz/2026-08-03",
+        "x/couch_investor/2026-07-29"
+      ],
+      "rc": 0
+    },
+    {
+      "id": "burry-short",
+      "query": "Michael Burry short position",
+      "temporal": false,
+      "n_results": 10,
+      "rank_first_expected": 1,
+      "hit@1": true,
+      "hit@5": true,
+      "hit@10": true,
+      "rr": 1.0,
+      "poison_hits_top10": 0,
+      "poison_slugs": [],
+      "median_age_days_top5": 13.0,
+      "top5": [
+        "x/amitisinvesting/2026-08-07",
+        "youtube/funofinvesting/qqsifitvng0",
+        "x/mentoviax/2026-07-26",
+        "x/wliang/2026-07-25",
+        "x/theronnievshow/2026-07-30"
+      ],
+      "rc": 0
+    },
+    {
+      "id": "nvda-capex",
+      "query": "NVDA capex risk",
+      "temporal": false,
+      "n_results": 10,
+      "rank_first_expected": null,
+      "hit@1": false,
+      "hit@5": false,
+      "hit@10": false,
+      "rr": 0.0,
+      "poison_hits_top10": 0,
+      "poison_slugs": [],
+      "median_age_days_top5": 7,
+      "top5": [
+        "x/jp_money_95630/2026-08-03",
+        "x/heidingout/2026-08-09",
+        "x/tomstockslab/2026-07-24",
+        "youtube/stevenfiorillo1/csfbfjbkljw",
+        "youtube/stevenfiorillo1/csfbfjbkljw"
+      ],
+      "rc": 0
+    },
+    {
+      "id": "pltr-print",
+      "query": "Palantir PLTR earnings reaction",
+      "temporal": true,
+      "n_results": 10,
+      "rank_first_expected": 1,
+      "hit@1": true,
+      "hit@5": true,
+      "hit@10": true,
+      "rr": 1.0,
+      "poison_hits_top10": 0,
+      "poison_slugs": [],
+      "median_age_days_top5": 7.0,
+      "top5": [
+        "youtube/stevenfiorillo1/x7sz0oqsrim",
+        "x/marketmaestro1/2026-08-03",
+        "youtube/stevenfiorillo1/wfkpe7llf5w",
+        "x/couch_investor/2026-08-03",
+        "youtube/couchinvestor/jep4vi9pw9o"
+      ],
+      "rc": 0
+    },
+    {
+      "id": "fundstrat",
+      "query": "Fundstrat Tom Lee market outlook",
+      "temporal": true,
+      "n_results": 10,
+      "rank_first_expected": 2,
+      "hit@1": false,
+      "hit@5": true,
+      "hit@10": true,
+      "rr": 0.5,
+      "poison_hits_top10": 0,
+      "poison_slugs": [],
+      "median_age_days_top5": null,
+      "top5": [
+        "youtube/wolf_financial/3ewear79riy",
+        "youtube/fundstrat_direct/jnj_4bribn0",
+        "youtube/fundstrat_direct/5ggvgl_cf7o",
+        "youtube/fundstrat_direct/5di4faeyatc",
+        "youtube/fundstrat_direct/ulp6rhaahdq"
+      ],
+      "rc": 0
+    },
+    {
+      "id": "ark",
+      "query": "ARK Invest analysis",
+      "temporal": false,
+      "n_results": 10,
+      "rank_first_expected": 1,
+      "hit@1": true,
+      "hit@5": true,
+      "hit@10": true,
+      "rr": 1.0,
+      "poison_hits_top10": 0,
+      "poison_slugs": [],
+      "median_age_days_top5": null,
+      "top5": [
+        "youtube/arkinvest2015/rkcq7sdfglg",
+        "youtube/arkinvest2015/hc6jgyc5zcg",
+        "youtube/arkinvest2015/xwzwitkqafs",
+        "youtube/arkinvest2015/aguul-xfvgy",
+        "youtube/arkinvest2015/frav7mln28a"
+      ],
+      "rc": 0
+    },
+    {
+      "id": "hood",
+      "query": "Robinhood HOOD stock",
+      "temporal": false,
+      "n_results": 10,
+      "rank_first_expected": 1,
+      "hit@1": true,
+      "hit@5": true,
+      "hit@10": true,
+      "rr": 1.0,
+      "poison_hits_top10": 0,
+      "poison_slugs": [],
+      "median_age_days_top5": 18.5,
+      "top5": [
+        "x/marketmaestro1/2026-07-29",
+        "youtube/arkinvest2015/ogkuwuff8ns",
+        "x/invst_informant/2026-07-16",
+        "x/futurenvesting/2026-08-07",
+        "x/amitisinvesting/2026-07-06"
+      ],
+      "rc": 0
+    },
+    {
+      "id": "crwv-depreciation",
+      "query": "CoreWeave GPU depreciation schedule",
+      "temporal": false,
+      "n_results": 10,
+      "rank_first_expected": 1,
+      "hit@1": true,
+      "hit@5": true,
+      "hit@10": true,
+      "rr": 1.0,
+      "poison_hits_top10": 0,
+      "poison_slugs": [],
+      "median_age_days_top5": null,
+      "top5": [
+        "youtube/stevenfiorillo1/iwgelq8fjd8",
+        "youtube/stevenfiorillo1/zgcl6_71u8w",
+        "youtube/stevenfiorillo1/ymyzf80tnu0",
+        "youtube/funofinvesting/qqsifitvng0",
+        "youtube/stevenfiorillo1/f85zvguvgie"
+      ],
+      "rc": 0
+    },
+    {
+      "id": "dario",
+      "query": "Dario Amodei",
+      "temporal": false,
+      "n_results": 10,
+      "rank_first_expected": 1,
+      "hit@1": true,
+      "hit@5": true,
+      "hit@10": true,
+      "rr": 1.0,
+      "poison_hits_top10": 0,
+      "poison_slugs": [],
+      "median_age_days_top5": 6.5,
+      "top5": [
+        "entities/dario-amodei",
+        "youtube/wolf_financial/bblteczb3gg",
+        "x/sam_badawi/2026-07-31",
+        "x/michaelwigginso/2026-08-07",
+        "youtube/papergainsinc/vurbdgxrqhw"
+      ],
+      "rc": 0
+    },
+    {
+      "id": "asml",
+      "query": "ASML",
+      "temporal": false,
+      "n_results": 10,
+      "rank_first_expected": 1,
+      "hit@1": true,
+      "hit@5": true,
+      "hit@10": true,
+      "rr": 1.0,
+      "poison_hits_top10": 0,
+      "poison_slugs": [],
+      "median_age_days_top5": 14,
+      "top5": [
+        "entities/asml",
+        "youtube/wolf_financial/aiojkpx_roe",
+        "youtube/wolf_financial/jyt2zsi3s5w",
+        "youtube/couchinvestor/fflmw-y29uu",
+        "x/wliang/2026-07-27"
+      ],
+      "rc": 0
+    },
+    {
+      "id": "week-market",
+      "query": "what happened in the market this week",
+      "temporal": true,
+      "n_results": 10,
+      "rank_first_expected": 1,
+      "hit@1": true,
+      "hit@5": true,
+      "hit@10": true,
+      "rr": 1.0,
+      "poison_hits_top10": 0,
+      "poison_slugs": [],
+      "median_age_days_top5": null,
+      "top5": [
+        "youtube/papergainsinc/aqpemalocfk",
+        "youtube/theronnievshow/4ancgincgoa",
+        "youtube/theronnievshow/f3bl8yuyyiq",
+        "youtube/funofinvesting/ebk0ih7h104",
+        "youtube/amitinvesting/2eormoprryi"
+      ],
+      "rc": 0
+    }
+  ]
+}
