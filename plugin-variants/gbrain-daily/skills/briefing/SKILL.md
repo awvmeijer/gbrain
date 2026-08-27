@@ -33,6 +33,25 @@ Compile a daily briefing from brain context.
 - The briefing is read-only: no brain pages are created or modified unless the user explicitly requests it.
 - Stale alerts surface pages relevant to today's context, not just all stale pages.
 
+## brains-port — this user's morning brief
+
+This brain belongs to a hands-on investor whose live context is the **feeds**
+(X/fintwit, YouTube finance creators, Discord) and the skills built on them —
+not meetings/deals/CRM. For THIS brain, lead the briefing with, in order:
+
+1. **What needs you** — run `skills/what-needs-me` (pending proposals, decisions,
+   open loops). If nothing qualifies, say so plainly.
+2. **Markets read** — run `skills/fintwit-analyst` over the last day (tickers,
+   catalysts, what changed, source conflicts).
+3. **This week's takeaway** — the latest reflection
+   (`gbrain list --type reflection -n 1` → `gbrain get <slug>`), 1–2 lines.
+4. **Fresh in the brain** — pages updated in the last 24h
+   (`gbrain list -n 20`), highest-signal first.
+
+The meetings / active-deals / people-in-play sections below are GBrain's generic
+template — include them only if such pages actually exist in this brain
+(currently they don't). Never fabricate a CRM that isn't there.
+
 ## Pre-Briefing Context Pull
 
 Run these BEFORE composing the briefing sections. All four pulls are read-only.
