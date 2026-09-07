@@ -9,3 +9,4 @@ lidar-pipeline | /Users/awvmeijer/Documents/Claude Code/3dreams-sg-lidar-pipelin
 finbrain | /Users/awvmeijer/Documents/Claude Code/Finbrain | https://github.com/awvmeijer/finbrain
 forge | /Users/awvmeijer/Documents/Claude Code/forge | https://github.com/awvmeijer/forge
 gbrain | /Users/awvmeijer/gbrain | https://github.com/awvmeijer/gbrain
+ether | /Users/awvmeijer/Brains V3 | https://github.com/awvmeijer/ether

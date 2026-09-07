@@ -33,6 +33,8 @@ log "collect: rss (finance news)"
 $RUN "$BV" "$GB/recipes/rss-to-brain/collect.py" "$ING" --max 50 || log "  rss collect failed"
 log "collect: git (repo commits)"
 $RUN "$BV" "$GB/recipes/git-to-brain/collect.py" "$ING" --max 200 || log "  git collect failed"
+log "collect: prs (open pull requests)"
+$RUN "$BV" "$GB/recipes/pr-to-brain/collect.py" "$ING" || log "  pr collect failed"
 log "collect: edgar (SEC filings → ticker hubs)"
 # Writes into the brain directly via the gbrain CLI (no $ING pages); dedups on
 # accession in logs/edgar-state.json, so --days=7 keeps the daily poll cheap
