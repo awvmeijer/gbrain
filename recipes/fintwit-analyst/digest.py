@@ -180,6 +180,25 @@ def gather(ing: Path, days: int) -> tuple[list[tuple[str, str]], list[str]]:
     return blocks, skipped
 
 
+COMPUTE_SUMMARY = Path.home() / "brains-console" / "sampler" / "summarize.py"
+
+
+def _compute_block() -> str:
+    """Yesterday's compute (GPU, memory, top services, LLM calls, Claude Code
+    tokens) from the brains-console sampler. Deterministic — no LLM tokens. A
+    failure prints the reason instead of dropping the section."""
+    import subprocess
+    try:
+        r = subprocess.run([sys.executable, str(COMPUTE_SUMMARY), "--day", "yesterday", "--markdown"],
+                           capture_output=True, text=True, timeout=120)
+    except (OSError, subprocess.SubprocessError) as e:
+        return f"**⚙️ Compute** — unavailable ({type(e).__name__})"
+    if r.returncode != 0 or not r.stdout.strip():
+        why = (r.stderr.strip().splitlines() or [f"exit {r.returncode}"])[-1][:120]
+        return f"**⚙️ Compute** — unavailable ({why})"
+    return r.stdout.strip()
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("ingest_dir")
@@ -222,6 +241,7 @@ def main() -> int:
     if args.dry_run:
         print(f"dry-run: {len(blocks) - len(dropped)} pages, {used // 1000}KB context, "
               f"prompt {len(user_msg) // 1000}KB — bridge call skipped", file=sys.stderr)
+        print(_compute_block())
         print(footer)
         return 0
 
@@ -243,7 +263,7 @@ def main() -> int:
     print(f"context: {len(blocks) - len(dropped)} pages, {used // 1000}KB "
           f"(+{len(dropped)} dropped, {len(skipped)} stale-excluded)", file=sys.stderr)
     print(out)
-    print("\n---\n" + footer)
+    print("\n---\n" + _compute_block() + "\n\n" + footer)
     return 0
 
 
