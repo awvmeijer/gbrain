@@ -247,13 +247,42 @@ def _write_page(text: str, via: str, file_rel: str | None) -> Path:
     return path
 
 
+# Single-flight ingest. Each capture used to spawn its own full `gbrain import` of
+# the whole ingest tree; forge posts captures in bursts, so on 2026-09-23 ~100
+# imports ran at once, each holding a Postgres connection — max_connections (100)
+# was exhausted and every gbrain client failed. Now at most one import runs, and
+# any captures that land meanwhile coalesce into exactly one follow-up run.
+_ingest_lock = threading.Lock()
+_ingest_state = {"running": False, "dirty": False}
+
+
+def _ingest_worker() -> None:
+    cmd = f'cd "{GBRAIN_DIR}" && gbrain import "{ING}" --no-embed && gbrain embed --stale'
+    while True:
+        with _ingest_lock:
+            _ingest_state["dirty"] = False
+        try:
+            with open(LOG, "a") as log:
+                subprocess.run(["/bin/bash", "-lc", cmd], stdout=log, stderr=subprocess.STDOUT,
+                               timeout=3600)
+        except Exception as e:  # noqa: BLE001 — logged; the daily feeds-cron is the backstop
+            _log(f"ingest run failed: {type(e).__name__}: {e}")
+        with _ingest_lock:
+            if not _ingest_state["dirty"]:
+                _ingest_state["running"] = False
+                return
+
+
 def _ingest_async() -> None:
-    """Fire-and-forget import + embed so the capture is live in ~seconds.
+    """Make the capture live in ~seconds: import + embed, single-flight.
     Failures land in logs/capture.log; the daily feeds-cron is the backstop."""
     LOG.parent.mkdir(parents=True, exist_ok=True)
-    cmd = f'cd "{GBRAIN_DIR}" && gbrain import "{ING}" --no-embed && gbrain embed --stale'
-    subprocess.Popen(["/bin/bash", "-lc", cmd], stdout=open(LOG, "a"),
-                     stderr=subprocess.STDOUT, start_new_session=True)
+    with _ingest_lock:
+        if _ingest_state["running"]:
+            _ingest_state["dirty"] = True  # the running worker will go round once more
+            return
+        _ingest_state["running"] = True
+    threading.Thread(target=_ingest_worker, name="ingest", daemon=True).start()
 
 
 # --- Voice inbox watcher (port of the old com.brain.voice 2-min launchd job) ---
