@@ -5,8 +5,8 @@ proposals-as-pages gate (skills/conventions/proposals.md): verdicts become
 `proposals/<date>-email-*.md` pages under the ingest dir, surfaced by
 `what-needs-me` / `/api/needs`, decided by the human via `/api/decide` (or by
 editing `status:`). NOTHING touches Gmail at proposal time — unlike the old
-pipeline, no drafts are created and no labels move; executing an approved
-proposal is a separate explicit step (a future executor, like trello-executor).
+pipeline, no drafts are created and no labels move; only an APPROVED proposal
+is executed, by the executors at the start of each run (drafts, archives).
 
 Old gateway verdict → new proposal page:
     archive        → action: archive_email       (kind: action)
@@ -29,6 +29,13 @@ the brain page and the ingest file, because `gbrain import` short-circuits on
 next nightly import would re-import the stale file and clobber the stamp
 (→ duplicate drafts). Approvals arrive via the dashboard or the Telegram
 approvals bot (`/api/decide`). Disable with `--no-execute-drafts`.
+
+Archives-on-approval (2026-09-23): approved `archive_email` proposals get their
+Gmail thread archived (INBOX label removed — nothing deleted; undo is "Move to
+Inbox"), verified by re-reading the labels, then stamped `executed_at` +
+`execution` on page and file. `--archives-preview` shows the plan without
+changing Gmail; `--execute-only` runs the executors without classifying;
+`--no-execute-archives` disables it.
 
 Cursor semantics (same as old ingest_state): `~/.gbrain/email-triage-state.json`
 stores the newest Gmail internalDate (ms) already classified; threads at or
@@ -58,6 +65,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -361,9 +369,15 @@ def write_proposal(out_root: Path, t: Any, v: Verdict) -> Path | None:
 
 
 def _gb(args: list[str], stdin: str | None = None, timeout: int = 60) -> tuple[int, str]:
-    """Sanctioned gbrain CLI call (same pattern as recipes/entity-extract)."""
+    """Sanctioned gbrain CLI call (same pattern as recipes/entity-extract).
+
+    Success returns stdout ONLY. gbrain prints an UPGRADE_AVAILABLE notice on
+    stderr; appended to `gbrain get` output, it would be written back into the
+    page by the stamp helpers below. Failures get stderr too, for the log."""
     r = subprocess.run(["gbrain", *args], cwd=str(GBRAIN_DIR), input=stdin,
                        capture_output=True, text=True, timeout=timeout)
+    if r.returncode == 0:
+        return 0, r.stdout or ""
     return r.returncode, (r.stdout or "") + (r.stderr or "")
 
 
@@ -451,6 +465,114 @@ def execute_approved_drafts(out_root: Path) -> int:
     return created
 
 
+# ----------------------------------------------- execute approved archives
+
+ARCHIVE_ACTION = "archive_email"
+ARCHIVE_MAX_PER_RUN = 500  # a runaway guard, not a quota: approvals arrive in sender groups
+
+
+def _approved_unexecuted(action: str) -> list[str]:
+    """Slugs of approved `action` proposals from this agent with no `executed_at`.
+
+    One read-only query (the session is forced read-only) instead of a capped
+    `gbrain list` walk: approvals can be months old, and a newest-100 scan would
+    silently never reach them."""
+    try:
+        url = json.loads((Path.home() / ".gbrain" / "config.json").read_text())["database_url"]
+    except (OSError, ValueError, KeyError) as e:
+        raise RuntimeError(f"no gbrain database_url: {e}") from e
+    sql = (
+        "SELECT slug FROM pages WHERE type = 'proposal' AND deleted_at IS NULL "
+        "AND lower(frontmatter->>'status') = 'approved' "
+        f"AND frontmatter->>'action' = '{action}' AND frontmatter->>'proposed_by' = '{AGENT}' "
+        "AND NOT (frontmatter ? 'executed_at') ORDER BY slug"
+    )
+    r = subprocess.run(["psql", url, "-At", "-c", sql], capture_output=True, text=True, timeout=30,
+                       env={**os.environ, "PGOPTIONS": "-c default_transaction_read_only=on"})
+    if r.returncode != 0:
+        raise RuntimeError(f"psql: {r.stderr.strip()[:160]}")
+    return [ln.strip() for ln in r.stdout.splitlines() if ln.strip()]
+
+
+def _stamp(slug: str, content: str, fields: dict[str, str], out_root: Path) -> bool:
+    """Write `fields` into the frontmatter of the brain page AND the ingest file
+    (same write-through reason as `_stamp_drafted`). Returns brain-write success."""
+    for k in fields:
+        content = re.sub(rf"^{re.escape(k)}:\s*.*\n", "", content, flags=re.MULTILINE)
+    head = "".join(f"{k}: {v}\n" for k, v in fields.items())
+    content = re.sub(r"^(---\n)", lambda m: m.group(1) + head, content, count=1)
+    rc, out = _gb(["put", slug, "--content", content])
+    if rc != 0:
+        print(f"  stamp FAILED (brain) {slug}: {out.strip()[:120]}", file=sys.stderr)
+    ing_file = (out_root / f"{slug}.md").resolve()
+    if ing_file.is_relative_to(out_root.resolve()) and ing_file.exists():
+        ing_file.write_text(content)
+    return rc == 0
+
+
+def execute_approved_archives(out_root: Path, *, preview: bool = False) -> dict[str, int]:
+    """Approved `archive_email` proposals → the Gmail thread leaves the Inbox.
+
+    Archiving only removes the INBOX label: nothing is deleted, and the rollback
+    is "Move to Inbox" in Gmail. Per proposal: re-check the page (approved, this
+    agent, target matches thread_id, not executed), read the thread's labels,
+    archive only if it is still in the Inbox, confirm INBOX is gone, then stamp
+    `executed_at` + `execution` (archived | already_archived | thread_missing).
+    Idempotent via the stamp. `preview=True` reads Gmail but changes nothing.
+    """
+    counts = {"archived": 0, "already_archived": 0, "thread_missing": 0, "skipped": 0, "failed": 0}
+    slugs = _approved_unexecuted(ARCHIVE_ACTION)
+    if len(slugs) > ARCHIVE_MAX_PER_RUN:
+        print(f"execute-archives: {len(slugs)} approved; doing the first {ARCHIVE_MAX_PER_RUN} this run")
+        slugs = slugs[:ARCHIVE_MAX_PER_RUN]
+    for slug in slugs:
+        rc, content = _gb(["get", slug])
+        if rc != 0 or not content.strip():
+            counts["failed"] += 1
+            print(f"  {slug}: gbrain get failed — retry next run", file=sys.stderr)
+            continue
+        thread_id = _fm_field(content, "thread_id")
+        if (_fm_field(content, "action") != ARCHIVE_ACTION
+                or _fm_field(content, "status").lower() != "approved"
+                or _fm_field(content, "proposed_by") != AGENT
+                or _fm_field(content, "executed_at")
+                or not thread_id
+                or _fm_field(content, "target") not in ("", f"gmail:thread/{thread_id}")):
+            counts["skipped"] += 1
+            print(f"  {slug}: page no longer matches an approved, unexecuted archive — skipped")
+            continue
+        try:
+            labels = gmail_client.thread_label_ids(thread_id)
+            if labels is None:
+                outcome = "thread_missing"
+            elif "INBOX" not in labels:
+                outcome = "already_archived"
+            elif preview:
+                counts["archived"] += 1
+                print(f"  would archive {slug} (thread {thread_id})")
+                continue
+            else:
+                gmail_client.archive(thread_id)
+                after = gmail_client.thread_label_ids(thread_id)
+                if after is not None and "INBOX" in after:
+                    raise gmail_client.GmailError("INBOX label still present after archive")
+                outcome = "archived"
+        except Exception as e:  # noqa: BLE001 — auth stale / API error: no stamp, retry next run
+            counts["failed"] += 1
+            print(f"  {slug}: {type(e).__name__}: {e}", file=sys.stderr)
+            continue
+        counts[outcome] += 1
+        if preview:
+            print(f"  {slug}: {outcome} (preview — not stamped)")
+            continue
+        now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        _stamp(slug, content, {"executed_at": now, "execution": outcome, "executed_by": AGENT}, out_root)
+        print(f"  {outcome} {slug} (thread {thread_id})")
+    done = {k: v for k, v in counts.items() if v}
+    print(f"execute-archives{' (preview)' if preview else ''}: {done or 'nothing approved'}")
+    return counts
+
+
 # ---------------------------------------------------------------- fixtures
 
 
@@ -477,6 +599,12 @@ def main() -> None:
     ap.add_argument("--auth", action="store_true", help="USER-RUN ONLY: interactive Gmail OAuth re-auth")
     ap.add_argument("--no-execute-drafts", action="store_true",
                     help="skip turning approved draft_reply proposals into Gmail drafts")
+    ap.add_argument("--no-execute-archives", action="store_true",
+                    help="skip archiving the Gmail threads of approved archive_email proposals")
+    ap.add_argument("--archives-preview", action="store_true",
+                    help="show what the archive executor would do (reads Gmail, changes nothing) and exit")
+    ap.add_argument("--execute-only", action="store_true",
+                    help="run the approval executors (drafts + archives) and exit — no classification")
     args = ap.parse_args()
 
     if args.auth:
@@ -491,11 +619,21 @@ def main() -> None:
 
     # Approved drafts FIRST — independent of whether new mail arrived, and the
     # human-facing outcome of the last approval round. Never in offline modes.
+    if args.archives_preview:
+        execute_approved_archives(out_root, preview=True)
+        return
     if not args.no_execute_drafts and not args.dry_run and not args.fixtures:
         try:
             execute_approved_drafts(out_root)
         except Exception as e:  # noqa: BLE001 — executor trouble must not block triage
             print(f"execute-drafts failed: {type(e).__name__}: {e}", file=sys.stderr)
+    if not args.no_execute_archives and not args.dry_run and not args.fixtures:
+        try:
+            execute_approved_archives(out_root)
+        except Exception as e:  # noqa: BLE001 — executor trouble must not block triage
+            print(f"execute-archives failed: {type(e).__name__}: {e}", file=sys.stderr)
+    if args.execute_only:
+        return
 
     state = _load_state()
     cursor_ms = int(state.get("cursor_ms") or 0)

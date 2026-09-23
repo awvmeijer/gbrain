@@ -235,7 +235,27 @@ def get_thread(thread_id: str) -> ThreadSummary:
     )
 
 
-# ---- Mutation helpers: FOR A FUTURE EXECUTOR ONLY (approved proposals) ----
+def thread_label_ids(thread_id: str) -> list[str] | None:
+    """Union of the thread's message labels, or None when the thread no longer
+    exists (deleted, or not visible to this account). Cheap: `format=minimal`."""
+    from googleapiclient.errors import HttpError
+
+    svc = _service()
+    try:
+        t = svc.users().threads().get(userId="me", id=thread_id, format="minimal").execute()
+    except HttpError as e:
+        if getattr(e, "status_code", None) == 404 or getattr(getattr(e, "resp", None), "status", None) == 404:
+            return None
+        raise
+    labels: list[str] = []
+    for m in t.get("messages", []) or []:
+        for lid in m.get("labelIds", []) or []:
+            if lid not in labels:
+                labels.append(lid)
+    return labels
+
+
+# ---- Mutation helpers: executors only, and only for approved proposals ----
 
 
 def modify_labels(thread_id: str, *, add: Iterable[str] = (), remove: Iterable[str] = ()) -> None:
