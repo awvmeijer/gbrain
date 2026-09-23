@@ -15,6 +15,7 @@ captures, so a leaked key's blast radius is spam.
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import os
@@ -1043,8 +1044,16 @@ async def internal_post_digest(request: Request):
         cur += line
     if cur:
         chunks.append(cur)
+    # Send the whole digest (digests run 14-23KB ≈ 8-13 chunks); the old cap of 6
+    # silently dropped the coverage footer. 15 bounds a runaway digest, and the
+    # pause keeps us under Discord's webhook rate limit (5 requests / 2 s).
+    max_chunks = 15
+    if len(chunks) > max_chunks:
+        chunks = chunks[:max_chunks - 1] + [f"… truncated — full digest: /api/today ({files[0].stem})"]
     sent = 0
-    for ch in chunks[:6]:
+    for i, ch in enumerate(chunks):
+        if i:
+            await asyncio.sleep(0.5)
         try:
             # Discord requires a real User-Agent — the default Python-urllib UA 403s.
             req = urllib.request.Request(webhook, data=json.dumps({"content": ch}).encode(),

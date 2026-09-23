@@ -171,6 +171,13 @@ def main() -> None:
     for ent_slug, (kind, token, _srcs) in ents.items():
         if ent_slug in created or ent_slug in have:
             continue
+        # `have` is capped (gbrain list returns ≤100 rows), so confirm absence
+        # before `put` — otherwise an existing page (e.g. an EDGAR filing page)
+        # would be overwritten with the stub template.
+        rc_get, _ = gb(["get", ent_slug])
+        if rc_get == 0:
+            have.add(ent_slug)
+            continue
         content = PAGE_TMPL[kind].format(t=token)
         rc, out = gb(["put", ent_slug], stdin=content)
         if rc == 0:

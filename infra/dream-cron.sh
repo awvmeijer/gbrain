@@ -58,6 +58,15 @@ else
   fi
 fi
 
+# Tier-0 deterministic entities (cashtags, SEC accessions, arXiv, DOI) → ticker /
+# filing / paper hubs + typed edges. Unscheduled from 2026-07-05 until 2026-09-23,
+# which froze the graph's seeds and starved convergence. The first catch-up is
+# ~11k `gbrain link` calls; state is saved every 50 edges, so the 60-min cap just
+# spreads the backlog over a few nights. Runs before the relations pass, which
+# reads its entity pages.
+log "entity extract: tier-0 regex pass"
+timeout 3600 "$BV" "$GB/recipes/entity-extract/backfill.py" || log "  entity extract failed or hit its 60-min cap (resumes tomorrow)"
+
 # Typed entity relations (LLM, local qwen3 via Ollama) — runs after dream so
 # it sees tonight's consolidated corpus; safe on PGLite too (short-lived
 # `gbrain link` invocations, same contention profile as feeds-cron's import).
@@ -67,5 +76,11 @@ fi
 # instead of only skimming the last two days.
 log "typed relations: LLM pass over recent pages"
 "$BV" "$GB/recipes/entity-extract/llm_relations.py" --days 30 --limit 200 || log "  relations pass failed"
+
+# Convergence findings (the /api/findings board). Needs the tier-0 edges above.
+# Reuses a month's synthesis while its signal classes are unchanged, so steady
+# state costs 0 Claude calls a night.
+log "convergence: detector"
+timeout 1800 "$BV" "$GB/recipes/convergence/detect.py" || log "  convergence failed"
 
 log "done"

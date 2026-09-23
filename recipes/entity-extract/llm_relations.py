@@ -50,7 +50,11 @@ MAX_RELATIONS_PER_PAGE = 8
 # Skip pages that are synthesized or process artifacts, not source material:
 # digests summarize other pages (self-referential edges), proposals are
 # workflow state, entity/filing hubs are graph nodes themselves.
-SKIP_PREFIXES = ("digests/", "proposals/", "ticker/", "filings/", "papers/", "entities/")
+# capture/ (2026-09-23): forge2 insight captures arrive ~1,400/day and carry no
+# entity-to-entity relations. Newest-first, they filled all 200 nightly slots —
+# 0 new edges every night from 2026-08-16 until this skip.
+SKIP_PREFIXES = ("digests/", "proposals/", "ticker/", "filings/", "papers/", "entities/",
+                 "capture/")
 
 # Entities the model loves to emit that are never useful graph nodes.
 ENTITY_STOP = {

@@ -60,9 +60,12 @@ def gb(args: list[str], stdin: str | None = None, timeout: int = 240) -> tuple[i
 
 
 def gj(args: list[str], default):
-    _, out = gb(args)
+    # Parse stdout only: gb() appends stderr, and gbrain's UPGRADE_AVAILABLE notice
+    # on stderr made every json.loads fail → classes={} → 0 findings since July.
+    r = subprocess.run(["gbrain", *args], cwd=str(GBRAIN), capture_output=True,
+                       text=True, timeout=240)
     try:
-        return json.loads(out)
+        return json.loads(r.stdout)
     except Exception:
         return default
 
@@ -201,7 +204,19 @@ def fire(sym, classes, sc, active, total_ev, held, reasons):
     reasons_md = "\n".join(f"- {r}" for r in reasons)
 
     narrative = "_(synthesis pending — run without --no-think)_"
-    if not NO_THINK:
+    # Reuse this month's synthesis when the same signal classes fire again: a nightly
+    # re-run should not spend a Claude Max `think` call on an unchanged thesis.
+    _, prev = gb(["get", fslug])
+    prev_m = re.search(r"## Synthesis\s*(.+)$", prev, re.DOTALL)
+    prev_good = bool(prev_m and len(prev_m.group(1).strip()) > 60
+                     and "synthesis pending" not in prev_m.group(1)
+                     and "synthesis skipped" not in prev_m.group(1))
+    prev_cls = re.search(r"^classes: \[(.*)\]$", prev, re.MULTILINE)
+    same_classes = bool(prev_cls and {c.strip() for c in prev_cls.group(1).split(",") if c.strip()} == set(active))
+    if prev_good and same_classes:
+        narrative = prev_m.group(1).strip()
+        log(f"  reusing {window} synthesis for {sym} (signal classes unchanged)")
+    elif not NO_THINK:
         log(f"  running think for {sym} (synthesis)…")
         cls = ", ".join(CLASS_LABEL.get(c, c) for c in active)
         q = (f"Synthesize the convergence thesis on ${sym}. Independent signal classes have collided: {cls}. "
@@ -215,12 +230,9 @@ def fire(sym, classes, sc, active, total_ev, held, reasons):
             body = "\n".join(lines[1:]).strip()
         if rc == 0 and len(body) > 40:
             narrative = body
-    else:
-        # preserve an existing good synthesis on fast re-runs
-        _, prev = gb(["get", fslug])
-        m = re.search(r"## Synthesis\s*(.+)$", prev, re.DOTALL)
-        if m and len(m.group(1).strip()) > 60 and "synthesis pending" not in m.group(1) and "synthesis skipped" not in m.group(1):
-            narrative = m.group(1).strip()
+    elif prev_good:
+        # preserve an existing good synthesis on fast (--no-think) re-runs
+        narrative = prev_m.group(1).strip()
 
     content = f"""---
 type: finding
