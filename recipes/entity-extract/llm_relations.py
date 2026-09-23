@@ -211,8 +211,35 @@ def _named_in(name: str, quote_n: str) -> bool:
     return len(words) >= 2 and all(re.search(rf"(?<![a-z0-9]){re.escape(w)}", quote_n) for w in words)
 
 
+# Speech, sentiment and document verbs describe a statement, not a relation
+# between two entities ("Alex Karp says Dario Amodei", "HOOD bullish crypto").
+NON_RELATION_PREDICATES = {
+    "says", "said", "states", "stated", "mentions", "mentioned", "discusses", "discussed", "notes",
+    "noted", "thinks", "believes", "bullish", "bearish", "excited", "comments_on", "talks_about",
+    "tweets", "tweeted", "cites", "cited", "highlights", "praises", "criticizes", "whitepaper",
+    "compares", "compares_to", "compares_performance_to", "likes", "loves", "hates", "asks",
+}
+
+
+def _is_entity_name(name: str) -> bool:
+    """Numbers and amounts are not entities ("1.1 trillion", "41", "$25B")."""
+    n = re.sub(r"[-_]+", " ", (name or "").lower()).strip()
+    if not re.search(r"[a-z]", n):
+        return False
+    return not re.fullmatch(r"\$?[\d.,\s]+(%|x|[kmb]n?|bps|thousand|million|billion|trillion)?", n)
+
+
+def _stem_in(stem: str, quote_n: str) -> bool:
+    """Stem at a word start: "ship" must not match inside "partnership"."""
+    return re.search(rf"(?<![a-z0-9]){re.escape(stem.strip())}", quote_n) is not None
+
+
 def quote_gate(rel: dict, s_name: str, o_name: str, pred: str, page_n: str) -> tuple[str | None, str]:
     """(quote, "ok") if the relation is grounded in the page, else (None, reason)."""
+    if pred in NON_RELATION_PREDICATES:
+        return None, "not_a_relation"
+    if not (_is_entity_name(s_name) and _is_entity_name(o_name)):
+        return None, "not_an_entity"
     quote = re.sub(r"\s+", " ", str(rel.get("quote") or "")).strip().strip('"\'')
     if not (QUOTE_MIN <= len(quote) <= QUOTE_MAX):
         return None, "no_quote" if not quote else "quote_length"
@@ -221,7 +248,7 @@ def quote_gate(rel: dict, s_name: str, o_name: str, pred: str, page_n: str) -> t
         return None, "quote_not_in_page"
     if not (_named_in(s_name, quote_n) and _named_in(o_name, quote_n)):
         return None, "entity_not_in_quote"
-    stems = [st for st in _predicate_stems(pred) if st in quote_n]
+    stems = [st for st in _predicate_stems(pred) if _stem_in(st, quote_n)]
     if not stems:
         return None, "predicate_not_in_quote"
     # Role predicates name a PERSON's role: the subject must sit right next to the
@@ -242,7 +269,7 @@ def _near(name: str, stems: list[str], quote_n: str, window: int) -> bool:
     n = _norm(name).lstrip("$")
     spans = [(m.start(), m.end()) for m in re.finditer(re.escape(n), quote_n)] if n else []
     for st in stems:
-        for m in re.finditer(re.escape(st), quote_n):
+        for m in re.finditer(rf"(?<![a-z0-9]){re.escape(st.strip())}", quote_n):
             for a, b in spans:
                 gap = m.start() - b if m.start() >= b else a - m.end()
                 if 0 <= gap <= window or (a <= m.start() < b):
