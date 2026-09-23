@@ -1024,8 +1024,14 @@ async function hookUserPrompt(io: HookIo): Promise<number> {
       const conf = confineTranscriptPath(j.transcript_path, {
         ...(io.transcriptRoot ? { root: io.transcriptRoot } : {}),
       });
-      if (!conf.ok) return { outcome: 'degraded', reason: `transcript_${conf.reason}` };
-      try {
+      // A transcript that does not exist yet is not a confinement violation:
+      // the first prompt of a session races Claude Code's first transcript
+      // write (lstat → 'unreadable'). Nothing is read, so fall through with the
+      // prompt alone instead of skipping the session's most useful injection.
+      if (!conf.ok && conf.reason !== 'unreadable') {
+        return { outcome: 'degraded', reason: `transcript_${conf.reason}` };
+      }
+      if (conf.ok) try {
         const parsed = parseTranscript(conf.path, { maxBytes: USER_PROMPT_TRANSCRIPT_MAX_BYTES });
         turns = parsed.turns.slice(-USER_PROMPT_WINDOW_TURNS);
         // Cross-turn dedupe: feed the blocks WE previously injected this

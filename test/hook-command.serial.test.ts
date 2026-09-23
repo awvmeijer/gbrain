@@ -429,6 +429,24 @@ describe('user-prompt', () => {
     expect((await lastHeartbeat())?.reason).toBe('transcript_outside_projects_dir');
   });
 
+  test('not-yet-written transcript falls through with the prompt alone (first-prompt race)', async () => {
+    const dataDir = join(tmp, 'data');
+    writePgliteConfig(dataDir);
+    const root = join(tmp, 'projects-root');
+    mkdirSync(root, { recursive: true });
+    const out = collectStdout();
+    expect(
+      await runHook(['user-prompt'], {
+        ...out.io,
+        stdin: JSON.stringify({ prompt: 'x', transcript_path: join(root, 'not-written-yet.jsonl') }),
+        transcriptRoot: root,
+      }),
+    ).toBe(0);
+    // Past the transcript gate: whatever degrades next (no serve in this test),
+    // it is not the missing transcript.
+    expect((await lastHeartbeat())?.reason).not.toBe('transcript_unreadable');
+  });
+
   test('unauthorized (server holds a different secret) degrades cleanly', async () => {
     const dataDir = join(tmp, 'data');
     writePgliteConfig(dataDir);
