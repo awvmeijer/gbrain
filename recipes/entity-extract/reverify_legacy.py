@@ -92,6 +92,8 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--apply", action="store_true", help="rewrite / remove edges (default: dry run)")
     ap.add_argument("--limit", type=int, default=0, help="only the first N edges (0 = all)")
+    ap.add_argument("--remove-all", action="store_true",
+                    help="skip the re-check and remove every legacy edge (restore file first)")
     args = ap.parse_args()
 
     edges = psql_json(
@@ -106,6 +108,11 @@ def main() -> None:
     print(f"reverify: {len(edges)} legacy {LEGACY} edges ({'APPLY' if args.apply else 'dry run'})", flush=True)
 
     kept, removed, failed = [], [], 0
+    if args.remove_all:
+        # 2026-09-23 decision: a re-check cannot reach 90% precision (hand-checked
+        # sample: gate 28%, local judge 45%, Claude judge ~56%), so none are kept.
+        removed = [(e, None) for e in edges]
+        edges = []
     for i, e in enumerate(edges, 1):
         s_name, o_name = display_name(e["from_slug"], e["from_title"]), display_name(e["to_slug"], e["to_title"])
         try:

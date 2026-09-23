@@ -49,6 +49,7 @@ HOME = Path.home()
 GBRAIN = HOME / "gbrain"
 ING = HOME / "brains-ingest"
 STATE = GBRAIN / "logs" / "llm-relations-state.json"
+SHADOW_LOG = GBRAIN / "logs" / "llm-relations-shadow.jsonl"  # proposals awaiting a human label
 TIER0_STATE = GBRAIN / "logs" / "entity-extract-state.json"  # backfill.py's created pages
 LOG = GBRAIN / "logs" / "llm-relations.log"
 
@@ -78,7 +79,9 @@ SYSTEM_PROMPT = """You extract typed relations between NAMED entities from a not
 Rules:
 - Only entities explicitly named in the text: people, companies, tickers, organizations, products, technologies, places.
 - Only relations the text actually states or strongly implies — never invent.
-- predicate: a short lowercase snake_case verb phrase, e.g. acquired, partners_with, ceo_of, works_at, supplies, invested_in, competes_with, subsidiary_of, launched, sued_by, holds_position_in.
+- predicate: EXACTLY one of these (subject → object, direction matters):
+{schema}
+  If the relation is none of these, leave it out.
 - At most {max_rel} relations. Fewer is better than doubtful.
 - If the note contains no clear entity-to-entity relations, return an empty list.
 
@@ -159,6 +162,28 @@ def entity_slug(name: str, tickers: set[str]) -> tuple[str, str] | None:
 # are named in it, (3) the predicate's verb is grounded in it. Precision over
 # recall: a doubtful edge is dropped, and every kept edge carries its quote.
 
+# Closed relation schema (2026-09-23). Open-schema extraction produced 350
+# predicate types for 1,063 edges and got direction and meaning wrong often
+# enough that no after-the-fact check reached 90% precision. Every predicate here
+# has a definition and a direction; anything else is dropped.
+RELATION_SCHEMA = {
+    "acquired": "subject company acquired or agreed to buy the object company or asset",
+    "invested_in": "subject invested in, or holds an equity stake in, the object",
+    "supplies": "subject sells or provides products/services to the object (object is the customer)",
+    "contract_with": "subject signed a named contract or deal with the object",
+    "partners_with": "subject and object announced a partnership or collaboration",
+    "competes_with": "subject and object are explicitly described as competitors",
+    "subsidiary_of": "subject is owned by, or a unit of, the object",
+    "merged_with": "subject merged or agreed to merge with the object",
+    "launched": "subject company launched or released the object product",
+    "sued": "subject filed a lawsuit against the object",
+    "ceo_of": "subject person is the CEO of the object organisation",
+    "founder_of": "subject person founded the object organisation",
+    "works_at": "subject person works at the object organisation",
+    "joins_index": "subject company joins or is added to the object index",
+}
+SCHEMA_TEXT = "\n".join(f"  - {k}: {v}" for k, v in RELATION_SCHEMA.items())
+
 LINK_SOURCE = "llm-qwen3-quoted"
 QUOTE_MIN, QUOTE_MAX = 12, 400
 
@@ -179,6 +204,11 @@ PREDICATE_STEMS = {
     "subsidiary_of": ("subsidiar", "owned by", "unit of", "division", "part of"),
     "launched": ("launch", "releas", "unveil", "introduc", "announc"),
     "sued_by": ("sue", "lawsuit", "litigat", "court"),
+    "sued": ("sue", "lawsuit", "litigat", "court"),
+    "contract_with": ("contract", "deal", "agreement", "signed", "award"),
+    "merged_with": ("merg", "combin", "amalgam"),
+    "founder_of": ("found", "co-found", "cofound", "started"),
+    "joins_index": ("join", "added", "inclusion", "includ", "enter", "replac"),
     "holds_position_in": ("position", "holds", "long", "short", "shares", "own"),
 }
 _PRED_STOP = {"with", "of", "in", "by", "to", "on", "for", "at", "from", "the", "a", "an", "is", "has", "be"}
@@ -236,6 +266,8 @@ def _stem_in(stem: str, quote_n: str) -> bool:
 
 def quote_gate(rel: dict, s_name: str, o_name: str, pred: str, page_n: str) -> tuple[str | None, str]:
     """(quote, "ok") if the relation is grounded in the page, else (None, reason)."""
+    if pred not in RELATION_SCHEMA:
+        return None, "predicate_not_in_schema"
     if pred in NON_RELATION_PREDICATES:
         return None, "not_a_relation"
     if not (_is_entity_name(s_name) and _is_entity_name(o_name)):
@@ -259,7 +291,7 @@ def quote_gate(rel: dict, s_name: str, o_name: str, pred: str, page_n: str) -> t
     return quote, "ok"
 
 
-ROLE_PREDICATES = {"ceo_of", "cto_of", "cfo_of", "chairman_of", "founder_of", "founded", "works_at", "president_of"}
+ROLE_PREDICATES = {"ceo_of", "founder_of", "works_at"}
 ROLE_WINDOW = 24  # max characters BETWEEN the subject's mention and the role word
 
 
@@ -344,6 +376,9 @@ def main() -> None:
     ap.add_argument("--model", default="qwen3:30b-a3b")
     ap.add_argument("--ollama", default="http://127.0.0.1:11434")
     ap.add_argument("--dry-run", action="store_true", help="extract + print, write nothing")
+    ap.add_argument("--write", action="store_true",
+                    help="write gated edges to the graph. Default is SHADOW mode: proposals go to "
+                         "logs/llm-relations-shadow.jsonl for labelling, the graph is untouched")
     ap.add_argument("--only-prefix", default="", help="restrict to ingest pages under this prefix, e.g. youtube/")
     args = ap.parse_args()
 
@@ -355,7 +390,12 @@ def main() -> None:
         return
 
     st = load_state()
-    done_pages = set(st.get("pages", []))
+    # SHADOW (default): proposals + gate verdicts go to SHADOW_LOG for labelling and
+    # the graph is untouched; shadow keeps its own progress so a later --write run
+    # still processes every page. --write: gated edges go to the graph.
+    shadow = not args.write and not args.dry_run
+    done_key = "shadow_pages" if shadow else "pages"
+    done_pages = set(st.get(done_key, []))
     ent_pages = set(st.get("entity_pages", []))
     edges = {tuple(e) for e in st.get("edges", [])}
     tickers = known_tickers()
@@ -375,11 +415,12 @@ def main() -> None:
         if len(candidates) >= args.limit:
             break
 
-    log(f"model={args.model} days={args.days} → {len(candidates)} pages to process "
-        f"(prior: {len(done_pages)} pages, {len(edges)} edges)")
+    mode = "SHADOW (review file only)" if shadow else "DRY RUN" if args.dry_run else "WRITE"
+    log(f"{mode} model={args.model} days={args.days} → {len(candidates)} pages to process "
+        f"(prior: {len(done_pages)} pages, {len(edges)} graph edges)")
 
-    system = SYSTEM_PROMPT.format(max_rel=MAX_RELATIONS_PER_PAGE)
-    new_edges = 0
+    system = SYSTEM_PROMPT.format(max_rel=MAX_RELATIONS_PER_PAGE, schema=SCHEMA_TEXT)
+    new_edges = shadow_rows = 0
     verdicts: dict[str, int] = {}
     for slug, f in candidates:
         title, body = page_text(f)
@@ -411,9 +452,23 @@ def main() -> None:
             if args.dry_run:
                 mark = "KEEP" if quote else f"DROP {verdict}"
                 log(f"  {mark:28} {s_name} --{pred}--> {o_name} | {str(r.get('quote') or '')[:110]!r}")
+            if shadow:
+                shadow_rows += 1
+                with SHADOW_LOG.open("a") as fh:
+                    fh.write(json.dumps({
+                        "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "page": slug, "model": args.model,
+                        "subject": s_name, "subject_slug": s_slug, "predicate": pred,
+                        "object": o_name, "object_slug": o_slug, "quote": str(r.get("quote") or "")[:QUOTE_MAX],
+                        "gate": verdict, "label": None,   # label: "correct" | "wrong" (human review)
+                    }) + "\n")
             if quote:
                 kept.append((s_slug, s_name, pred, o_slug, o_name, quote))
         if args.dry_run:
+            continue
+        if shadow:
+            done_pages.add(slug)
+            st[done_key] = sorted(done_pages)
+            save_state(st)
             continue
 
         for s_slug, s_name, pred, o_slug, o_name, quote in kept:
@@ -440,18 +495,17 @@ def main() -> None:
                 log(f"  link FAILED {s_slug} --{pred}--> {o_slug}: {out.strip()[:120]}")
 
         done_pages.add(slug)
-        st.update(pages=sorted(done_pages), entity_pages=sorted(ent_pages),
+        st.update({done_key: sorted(done_pages)}, entity_pages=sorted(ent_pages),
                   edges=[list(e) for e in edges])
         save_state(st)
 
-    if not args.dry_run:
-        st.update(pages=sorted(done_pages), entity_pages=sorted(ent_pages),
-                  edges=[list(e) for e in edges])
-        save_state(st)
     kept_n = verdicts.get("ok", 0)
     dropped = {k: v for k, v in sorted(verdicts.items(), key=lambda kv: -kv[1]) if k != "ok"}
-    log(f"quote gate: {kept_n} of {sum(verdicts.values())} proposed relations kept; dropped {dropped or 'none'}")
-    log(f"DONE — pages processed: {len(candidates)}, new edges: {new_edges}, total edges: {len(edges)}")
+    log(f"quote gate: {kept_n} of {sum(verdicts.values())} proposed relations passed; dropped {dropped or 'none'}")
+    if shadow:
+        log(f"DONE (shadow) — pages: {len(candidates)}, proposals logged: {shadow_rows} → {SHADOW_LOG}")
+    else:
+        log(f"DONE — pages processed: {len(candidates)}, new edges: {new_edges}, total edges: {len(edges)}")
 
 
 if __name__ == "__main__":

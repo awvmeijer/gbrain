@@ -74,8 +74,14 @@ timeout 3600 "$BV" "$GB/recipes/entity-extract/backfill.py" || log "  entity ext
 # 6,024-page orphan backlog never clears; 200/night is still <10 min on an
 # idle Mac at 03:30, and the wider window lets the pass eat into history
 # instead of only skimming the last two days.
-log "typed relations: LLM pass over recent pages"
+# 2026-09-23: SHADOW mode (no --write). The pre-gate edges were ~28% precise on a
+# hand-checked sample and were removed (restore: logs/llm-relations-legacy-removed.jsonl).
+# The pass now proposes into logs/llm-relations-shadow.jsonl with a closed relation
+# schema + quote gate; it writes to the graph again only once
+# recipes/entity-extract/eval_relations.py reports >=90% precision on >=50 labels.
+log "typed relations: LLM pass over recent pages (shadow)"
 "$BV" "$GB/recipes/entity-extract/llm_relations.py" --days 30 --limit 200 || log "  relations pass failed"
+"$BV" "$GB/recipes/entity-extract/eval_relations.py" | sed 's/^/  /' || true
 
 # Convergence findings (the /api/findings board). Needs the tier-0 edges above.
 # Reuses a month's synthesis while its signal classes are unchanged, so steady
