@@ -560,9 +560,48 @@ def api_today(x_brain_key: str | None = Header(default=None)):
     return {"date": latest.stem, "content": latest.read_text()}
 
 
+def _pg_json(sql: str, timeout: int = 20):
+    """One read-only query against the gbrain Postgres store, returned as parsed
+    JSON (the SQL must SELECT a single json value). The session is forced
+    read-only, so this path can never write the brain. None on any failure —
+    callers log and fall back; they never treat None as "empty"."""
+    try:
+        url = json.loads((HOME / ".gbrain" / "config.json").read_text())["database_url"]
+        r = subprocess.run(["psql", url, "-At", "-c", sql], capture_output=True, text=True,
+                           timeout=timeout,
+                           env=dict(os.environ, PGOPTIONS="-c default_transaction_read_only=on"))
+        if r.returncode != 0:
+            _log(f"pg query failed: {r.stderr.strip()[:200]}")
+            return None
+        return json.loads(r.stdout or "null")
+    except Exception as e:  # noqa: BLE001
+        _log(f"pg query failed: {e}")
+        return None
+
+
+_NEEDS_SQL = """
+SELECT coalesce(json_agg(t), '[]'::json) FROM (
+  SELECT slug, title,
+         coalesce(frontmatter->>'status', 'pending') AS status,
+         frontmatter->>'action' AS action, frontmatter->>'target' AS target,
+         frontmatter->>'rationale' AS rationale, frontmatter->>'rollback' AS rollback
+    FROM pages
+   WHERE type = 'proposal' AND deleted_at IS NULL
+     AND lower(coalesce(frontmatter->>'status', 'pending')) = 'pending'
+   ORDER BY coalesce(frontmatter->>'created', '') DESC, updated_at DESC
+   LIMIT 1000) t
+"""
+
+
 @app.get("/api/needs")
 def api_needs(x_brain_key: str | None = Header(default=None)):
+    """Pending proposals, newest first (cap 1000). One read-only query (~50 ms). The old path
+    — `gbrain list` + one `gbrain get` subprocess per proposal — took minutes and
+    piled up under the dashboard's 60 s poll; it remains only as the fallback."""
     _require(x_brain_key)
+    rows = _pg_json(_NEEDS_SQL)
+    if rows is not None:
+        return {"proposals": rows}
     out = []
     for p in _parse_list(_gbrain(["list", "--type", "proposal", "--limit", "50"])):
         content = _gbrain(["get", p["slug"]])
