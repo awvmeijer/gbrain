@@ -16,6 +16,14 @@ Scheduling: infra/dream-cron.sh runs this nightly AFTER `gbrain dream`
 (03:30, com.brains.dream.plist). Short-lived `gbrain` invocations only, so
 it is safe on PGLite while the dream itself stays gated on Postgres.
 
+Quote gate (2026-09-23): the model must return, per relation, the verbatim
+sentence that states it; an edge is written only if code confirms the quote is
+in the page, names both entities, grounds the predicate's verb, and — for role
+predicates (ceo_of, works_at, …) — has the subject next to the role word. Kept
+edges are tagged `llm-qwen3-quoted` and carry "<quote>" — <source slug> as their
+link context. The 1,063 earlier `llm-qwen3` edges predate the gate and have no
+receipt. `--only-prefix` restricts a run (e.g. youtube/) for targeted checks.
+
 Idempotent: logs/llm-relations-state.json records processed pages, created
 entity pages, and (src, dst, type) edges — re-runs are no-ops. Entity slugs
 join the existing graph where possible: a subject/object that is a known
@@ -54,7 +62,9 @@ MAX_RELATIONS_PER_PAGE = 8
 # entity-to-entity relations. Newest-first, they filled all 200 nightly slots —
 # 0 new edges every night from 2026-08-16 until this skip.
 SKIP_PREFIXES = ("digests/", "proposals/", "ticker/", "filings/", "papers/", "entities/",
-                 "capture/")
+                 "capture/", "sessions/", "git/")
+# sessions/ and git/ (2026-09-23): session records and commits are metadata
+# (title, files, commit subjects) — 0 relations proposed across a sampled run.
 
 # Entities the model loves to emit that are never useful graph nodes.
 ENTITY_STOP = {
@@ -72,8 +82,12 @@ Rules:
 - At most {max_rel} relations. Fewer is better than doubtful.
 - If the note contains no clear entity-to-entity relations, return an empty list.
 
+- quote: the exact sentence from the note that states the relation, copied verbatim (no paraphrase,
+  no ellipsis, at most 300 characters). It must name both the subject and the object. No quote → no relation.
+
 Answer with JSON ONLY, exactly this shape:
-{{"relations": [{{"subject": "NVDA", "predicate": "supplies", "object": "OpenAI"}}]}}"""
+{{"relations": [{{"subject": "NVDA", "predicate": "supplies", "object": "OpenAI",
+  "quote": "Nvidia supplies OpenAI with GB200 racks under the new deal."}}]}}"""
 
 
 def log(msg: str) -> None:
@@ -87,6 +101,8 @@ def log(msg: str) -> None:
 def gb(args: list[str], stdin: str | None = None, timeout: int = 60) -> tuple[int, str]:
     r = subprocess.run(["gbrain", *args], cwd=str(GBRAIN), input=stdin,
                        capture_output=True, text=True, timeout=timeout)
+    if r.returncode == 0:
+        return 0, r.stdout or ""  # stderr carries gbrain's UPGRADE_AVAILABLE notice
     return r.returncode, (r.stdout or "") + (r.stderr or "")
 
 
@@ -132,6 +148,106 @@ def entity_slug(name: str, tickers: set[str]) -> tuple[str, str] | None:
     if len(slug) < 2:
         return None
     return f"entities/{slug}", name
+
+
+# ---------------------------------------------------------------- quote gate
+#
+# 2026-09-23: without a check the pass wrote "Nvidia owns NBIS", "Nvidia ceo_of
+# ServiceNow", "Nvidia acquires IREN" — 1,063 edges, none with a receipt. Now the
+# model must return the sentence that states the relation, and an edge is written
+# only if code confirms: (1) the quote is verbatim in the page, (2) both entities
+# are named in it, (3) the predicate's verb is grounded in it. Precision over
+# recall: a doubtful edge is dropped, and every kept edge carries its quote.
+
+LINK_SOURCE = "llm-qwen3-quoted"
+QUOTE_MIN, QUOTE_MAX = 12, 400
+
+# Predicate → stems, any one of which must appear in the quote. Unlisted
+# predicates fall back to the stems of their own words (see _predicate_stems).
+PREDICATE_STEMS = {
+    "owns": ("own", "stake", "holds", "holding"),
+    "acquires": ("acqui", "buy", "bought", "purchas", "takeover", "merg"),
+    "acquired": ("acqui", "buy", "bought", "purchas", "takeover", "merg"),
+    "invested_in": ("invest", "stake", "backed", "fund", "financ"),
+    "invests_in": ("invest", "stake", "backed", "fund", "financ"),
+    "backed_by": ("back", "invest", "fund", "financ"),
+    "supplies": ("suppl", "provid", "deliver", "sell", "sold", "ship", "vendor"),
+    "competes_with": ("compet", "rival", " vs", "versus", "against"),
+    "partners_with": ("partner", "collaborat", "alliance", "joint", "team"),
+    "ceo_of": ("ceo", "chief executive"),
+    "works_at": ("work", "join", "employ", "hired", "engineer at", "at "),
+    "subsidiary_of": ("subsidiar", "owned by", "unit of", "division", "part of"),
+    "launched": ("launch", "releas", "unveil", "introduc", "announc"),
+    "sued_by": ("sue", "lawsuit", "litigat", "court"),
+    "holds_position_in": ("position", "holds", "long", "short", "shares", "own"),
+}
+_PRED_STOP = {"with", "of", "in", "by", "to", "on", "for", "at", "from", "the", "a", "an", "is", "has", "be"}
+
+
+def _norm(text: str) -> str:
+    """Lowercase, drop markdown emphasis and quote glyphs, collapse whitespace."""
+    text = (text or "").lower()
+    text = re.sub(r"[*_`>#|\[\]]", " ", text)
+    text = text.replace("\u2019", "'").replace("\u2018", "'").replace("\u201c", '"').replace("\u201d", '"')
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _predicate_stems(pred: str) -> tuple[str, ...]:
+    if pred in PREDICATE_STEMS:
+        return PREDICATE_STEMS[pred]
+    words = [w for w in pred.split("_") if w and w not in _PRED_STOP]
+    return tuple(w[:5] if len(w) > 5 else w for w in words) or (pred,)
+
+
+def _named_in(name: str, quote_n: str) -> bool:
+    """Is the entity named in the (normalized) quote? Whole name, or — for
+    multi-word names — every significant word. `$NVDA` and `NVDA` both count."""
+    n = _norm(name).lstrip("$")
+    if not n:
+        return False
+    if re.search(rf"(?<![a-z0-9]){re.escape(n)}(?![a-z0-9])", quote_n):
+        return True
+    words = [w for w in re.split(r"[^a-z0-9]+", n) if len(w) >= 3]
+    return len(words) >= 2 and all(re.search(rf"(?<![a-z0-9]){re.escape(w)}", quote_n) for w in words)
+
+
+def quote_gate(rel: dict, s_name: str, o_name: str, pred: str, page_n: str) -> tuple[str | None, str]:
+    """(quote, "ok") if the relation is grounded in the page, else (None, reason)."""
+    quote = re.sub(r"\s+", " ", str(rel.get("quote") or "")).strip().strip('"\'')
+    if not (QUOTE_MIN <= len(quote) <= QUOTE_MAX):
+        return None, "no_quote" if not quote else "quote_length"
+    quote_n = _norm(quote).rstrip(".")
+    if quote_n not in page_n:
+        return None, "quote_not_in_page"
+    if not (_named_in(s_name, quote_n) and _named_in(o_name, quote_n)):
+        return None, "entity_not_in_quote"
+    stems = [st for st in _predicate_stems(pred) if st in quote_n]
+    if not stems:
+        return None, "predicate_not_in_quote"
+    # Role predicates name a PERSON's role: the subject must sit right next to the
+    # role word ("Bill McDermott, CEO of ServiceNow" must not become Nvidia ceo_of
+    # ServiceNow just because Nvidia appears later in the sentence).
+    if pred in ROLE_PREDICATES and not _near(s_name, stems, quote_n, ROLE_WINDOW):
+        return None, "role_subject_not_adjacent"
+    return quote, "ok"
+
+
+ROLE_PREDICATES = {"ceo_of", "cto_of", "cfo_of", "chairman_of", "founder_of", "founded", "works_at", "president_of"}
+ROLE_WINDOW = 24  # max characters BETWEEN the subject's mention and the role word
+
+
+def _near(name: str, stems: list[str], quote_n: str, window: int) -> bool:
+    """Is some mention of `name` within `window` characters (gap, not offset) of a
+    role word? "Bill McDermott, CEO of" → gap 2; "CEO of ServiceNow, Bill McDermott" → 19."""
+    n = _norm(name).lstrip("$")
+    spans = [(m.start(), m.end()) for m in re.finditer(re.escape(n), quote_n)] if n else []
+    for st in stems:
+        for m in re.finditer(re.escape(st), quote_n):
+            for a, b in spans:
+                gap = m.start() - b if m.start() >= b else a - m.end()
+                if 0 <= gap <= window or (a <= m.start() < b):
+                    return True
+    return False
 
 
 def ollama_chat(base: str, model: str, system: str, user: str, timeout: int = 300) -> str:
@@ -201,6 +317,7 @@ def main() -> None:
     ap.add_argument("--model", default="qwen3:30b-a3b")
     ap.add_argument("--ollama", default="http://127.0.0.1:11434")
     ap.add_argument("--dry-run", action="store_true", help="extract + print, write nothing")
+    ap.add_argument("--only-prefix", default="", help="restrict to ingest pages under this prefix, e.g. youtube/")
     args = ap.parse_args()
 
     # Ollama liveness first — a dead daemon should be one log line, not 40 timeouts.
@@ -223,6 +340,8 @@ def main() -> None:
         slug = rel[:-3] if rel.endswith(".md") else rel
         if slug in done_pages or rel.startswith(SKIP_PREFIXES):
             continue
+        if args.only_prefix and not rel.startswith(args.only_prefix):
+            continue
         if f.stat().st_mtime < cutoff:
             break  # sorted newest-first; everything after is older
         candidates.append((slug, f))
@@ -234,8 +353,10 @@ def main() -> None:
 
     system = SYSTEM_PROMPT.format(max_rel=MAX_RELATIONS_PER_PAGE)
     new_edges = 0
+    verdicts: dict[str, int] = {}
     for slug, f in candidates:
         title, body = page_text(f)
+        page_n = _norm(f.read_text(errors="ignore"))  # the gate checks quotes against the whole page
         if len(body) < 80:  # ticker lists / stubs: nothing relational in there
             done_pages.add(slug)
             continue
@@ -245,6 +366,8 @@ def main() -> None:
             log(f"  {slug}: ollama call failed ({type(e).__name__}) — will retry next run")
             continue
         rels = parse_relations(raw)
+        if args.dry_run:
+            log(f"  {slug}: {len(rels)} proposed")
         kept = []
         for r in rels:
             pred = norm_predicate(str(r.get("predicate", "")))
@@ -256,13 +379,17 @@ def main() -> None:
             o_slug, o_name = o_res
             if s_slug == o_slug:
                 continue
-            kept.append((s_slug, s_name, pred, o_slug, o_name))
+            quote, verdict = quote_gate(r, s_name, o_name, pred, page_n)
+            verdicts[verdict] = verdicts.get(verdict, 0) + 1
+            if args.dry_run:
+                mark = "KEEP" if quote else f"DROP {verdict}"
+                log(f"  {mark:28} {s_name} --{pred}--> {o_name} | {str(r.get('quote') or '')[:110]!r}")
+            if quote:
+                kept.append((s_slug, s_name, pred, o_slug, o_name, quote))
         if args.dry_run:
-            for s_slug, _, pred, o_slug, _ in kept:
-                log(f"  DRY {slug}: {s_slug} --{pred}--> {o_slug}")
             continue
 
-        for s_slug, s_name, pred, o_slug, o_name in kept:
+        for s_slug, s_name, pred, o_slug, o_name, quote in kept:
             # 1) ensure both entity pages exist (ticker/ pages already do)
             for eslug, ename in ((s_slug, s_name), (o_slug, o_name)):
                 if eslug.startswith("entities/") and eslug not in ent_pages:
@@ -275,7 +402,10 @@ def main() -> None:
             key = (s_slug, o_slug, pred)
             if key in edges:
                 continue
-            rc, out = gb(["link", s_slug, o_slug, "--link-type", pred, "--link-source", "llm-qwen3"])
+            # The receipt travels with the edge: the verbatim sentence and the page it came from.
+            context = f"\u201c{quote[:300]}\u201d \u2014 {slug}"
+            rc, out = gb(["link", s_slug, o_slug, "--link-type", pred, "--link-source", LINK_SOURCE,
+                          "--context", context])
             if rc == 0:
                 edges.add(key)
                 new_edges += 1
@@ -291,6 +421,9 @@ def main() -> None:
         st.update(pages=sorted(done_pages), entity_pages=sorted(ent_pages),
                   edges=[list(e) for e in edges])
         save_state(st)
+    kept_n = verdicts.get("ok", 0)
+    dropped = {k: v for k, v in sorted(verdicts.items(), key=lambda kv: -kv[1]) if k != "ok"}
+    log(f"quote gate: {kept_n} of {sum(verdicts.values())} proposed relations kept; dropped {dropped or 'none'}")
     log(f"DONE — pages processed: {len(candidates)}, new edges: {new_edges}, total edges: {len(edges)}")
 
 
