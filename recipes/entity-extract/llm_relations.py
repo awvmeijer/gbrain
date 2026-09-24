@@ -24,11 +24,19 @@ edges are tagged `llm-qwen3-quoted` and carry "<quote>" — <source slug> as the
 link context. The 1,063 earlier `llm-qwen3` edges predate the gate and have no
 receipt. `--only-prefix` restricts a run (e.g. youtube/) for targeted checks.
 
-Idempotent: logs/llm-relations-state.json records processed pages, created
-entity pages, and (src, dst, type) edges — re-runs are no-ops. Entity slugs
-join the existing graph where possible: a subject/object that is a known
-ticker symbol (from backfill.py's state) lands on ticker/<sym>, everything
-else under entities/<slug>.
+Candidate sentences (2026-09-24): the model no longer reads whole pages. Code
+first finds sentences that name two or more KNOWN entities — ticker hubs (by
+symbol and by their SEC company name) and existing entity pages — and the model
+only labels the pair in each sentence with a schema predicate, or nothing. The
+quote is the sentence code supplied, so it is always verbatim; the gate still
+checks entities, predicate stems and role adjacency. Pages are ranked by how many
+candidate sentences they hold, so the nightly budget goes where the pairs are.
+(Whole-page mode, first shadow night: 200 pages → 5 proposals → 1 past the gate.)
+
+Idempotent: logs/llm-relations-state.json records processed pages and
+(src, dst, type) edges — re-runs are no-ops. Both ends of every edge are pages
+that already exist (ticker/<sym> or entities/<slug>), so the pass no longer
+mints entity stubs.
 
 Usage:
     python llm_relations.py [--days 2] [--limit 40] [--dry-run]
@@ -38,6 +46,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -50,11 +59,12 @@ GBRAIN = HOME / "gbrain"
 ING = HOME / "brains-ingest"
 STATE = GBRAIN / "logs" / "llm-relations-state.json"
 SHADOW_LOG = GBRAIN / "logs" / "llm-relations-shadow.jsonl"  # proposals awaiting a human label
-TIER0_STATE = GBRAIN / "logs" / "entity-extract-state.json"  # backfill.py's created pages
 LOG = GBRAIN / "logs" / "llm-relations.log"
+SEC_TICKERS = GBRAIN / "data" / "edgar" / "company_tickers.json"  # edgar-to-brain's daily cache
 
-MAX_BODY_CHARS = 4000
 MAX_RELATIONS_PER_PAGE = 8
+MAX_CANDIDATES_PER_PAGE = 8
+SENT_MIN, SENT_MAX = 30, 400
 
 # Skip pages that are synthesized or process artifacts, not source material:
 # digests summarize other pages (self-referential edges), proposals are
@@ -74,23 +84,21 @@ ENTITY_STOP = {
     "this", "that", "today", "tomorrow", "the fed",
 }
 
-SYSTEM_PROMPT = """You extract typed relations between NAMED entities from a note.
+SYSTEM_PROMPT = """You label relations between named entities, one sentence at a time.
 
-Rules:
-- Only entities explicitly named in the text: people, companies, tickers, organizations, products, technologies, places.
-- Only relations the text actually states or strongly implies — never invent.
+You get numbered sentences, each followed by the entities named in it. For each sentence,
+return a relation only if THAT sentence itself states it as fact. Opinions, predictions,
+questions, comparisons and price talk are not relations.
+
 - predicate: EXACTLY one of these (subject → object, direction matters):
 {schema}
-  If the relation is none of these, leave it out.
-- At most {max_rel} relations. Fewer is better than doubtful.
-- If the note contains no clear entity-to-entity relations, return an empty list.
+  If the sentence states none of these, return nothing for it.
+- subject and object: copied exactly from that sentence's entity list.
+- i: the sentence number.
+- At most {max_rel} relations in total. Fewer is better than doubtful.
 
-- quote: the exact sentence from the note that states the relation, copied verbatim (no paraphrase,
-  no ellipsis, at most 300 characters). It must name both the subject and the object. No quote → no relation.
-
-Answer with JSON ONLY, exactly this shape:
-{{"relations": [{{"subject": "NVDA", "predicate": "supplies", "object": "OpenAI",
-  "quote": "Nvidia supplies OpenAI with GB200 racks under the new deal."}}]}}"""
+Answer with JSON ONLY, exactly this shape (an empty list is a good answer):
+{{"relations": [{{"i": 1, "subject": "Nvidia", "predicate": "supplies", "object": "OpenAI"}}]}}"""
 
 
 def log(msg: str) -> None:
@@ -121,36 +129,9 @@ def save_state(st: dict) -> None:
     STATE.write_text(json.dumps(st))
 
 
-def known_tickers() -> set[str]:
-    """Ticker symbols whose ticker/<sym> page already exists (backfill.py state)."""
-    try:
-        pages = json.loads(TIER0_STATE.read_text()).get("pages", [])
-    except Exception:
-        return set()
-    return {p.split("/", 1)[1] for p in pages if p.startswith("ticker/")}
-
-
-def slugify(s: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-")[:60]
-
-
 def norm_predicate(p: str) -> str:
     p = re.sub(r"[^a-z0-9]+", "_", (p or "").lower()).strip("_")
     return p[:40]
-
-
-def entity_slug(name: str, tickers: set[str]) -> tuple[str, str] | None:
-    """(page slug, display name) for an extracted entity, or None if junk."""
-    name = re.sub(r"\s+", " ", (name or "")).strip().strip("$")
-    if not (2 <= len(name) <= 64) or name.lower() in ENTITY_STOP:
-        return None
-    # A bare 1-5 cap symbol that already has a ticker hub joins the existing graph.
-    if re.fullmatch(r"[A-Z]{1,5}", name) and name.lower() in tickers:
-        return f"ticker/{name.lower()}", name
-    slug = slugify(name)
-    if len(slug) < 2:
-        return None
-    return f"entities/{slug}", name
 
 
 # ---------------------------------------------------------------- quote gate
@@ -259,6 +240,22 @@ def _is_entity_name(name: str) -> bool:
     return not re.fullmatch(r"\$?[\d.,\s]+(%|x|[kmb]n?|bps|thousand|million|billion|trillion)?", n)
 
 
+HEDGE = re.compile(r"(?<![a-z])(likely|possibilit\w*|rumou?r\w*|speculat\w*|flagged|in talks|could|would)(?![a-z])")
+PASSIVE = {
+    "acquired": r"(acquired|bought|purchased|taken over) by",
+    "invested_in": r"(backed|funded|financed) by",
+    "supplies": r"(supplied|provided|powered) by",
+    "sued": r"sued by",
+    "launched": r"launched by",
+}
+
+
+def _passive_between(s_name: str, o_name: str, verb: str, quote_n: str) -> bool:
+    s_n, o_n = _norm(s_name).lstrip("$"), _norm(o_name).lstrip("$")
+    i, j = quote_n.find(s_n), quote_n.rfind(o_n)
+    return 0 <= i < j and re.search(verb, quote_n[i + len(s_n):j]) is not None
+
+
 def _stem_in(stem: str, quote_n: str) -> bool:
     """Stem at a word start: "ship" must not match inside "partnership"."""
     return re.search(rf"(?<![a-z0-9]){re.escape(stem.strip())}", quote_n) is not None
@@ -283,6 +280,14 @@ def quote_gate(rel: dict, s_name: str, o_name: str, pred: str, page_n: str) -> t
     stems = [st for st in _predicate_stems(pred) if _stem_in(st, quote_n)]
     if not stems:
         return None, "predicate_not_in_quote"
+    # A sentence that hedges states a possibility, not a relation ("merger described
+    # as a likely possibility", "vendor financing flagged as upcoming").
+    if HEDGE.search(quote_n):
+        return None, "hedged"
+    # Passive voice reverses direction: "IRDM — being acquired by RKLB" is RKLB
+    # acquired IRDM. Drop when the passive verb sits between subject and object.
+    if pred in PASSIVE and _passive_between(s_name, o_name, PASSIVE[pred], quote_n):
+        return None, "passive_reversed"
     # Role predicates name a PERSON's role: the subject must sit right next to the
     # role word ("Bill McDermott, CEO of ServiceNow" must not become Nvidia ceo_of
     # ServiceNow just because Nvidia appears later in the sentence).
@@ -347,7 +352,7 @@ def parse_relations(raw: str) -> list[dict]:
 
 
 def page_text(path: Path) -> tuple[str, str]:
-    """(title, body-without-frontmatter), body capped for the prompt."""
+    """(title, body-without-frontmatter)."""
     text = path.read_text(errors="ignore")
     title = ""
     body = text
@@ -358,15 +363,210 @@ def page_text(path: Path) -> tuple[str, str]:
             m = re.search(r"^title:\s*(.+)$", fm, re.MULTILINE)
             if m:
                 title = m.group(1).strip().strip("'\"")
-    body = body.strip()
-    if len(body) > MAX_BODY_CHARS:
-        body = body[:MAX_BODY_CHARS] + "…[truncated]"
-    return title, body
+    return title, body.strip()
 
 
-ENTITY_PAGE_TMPL = ("---\ntype: entity\ntitle: {name}\nsource: entity-extract\n"
-                    "tags: [entity, llm-relations]\n---\n\n# {name}\n\n"
-                    "Entity hub (LLM-extracted). Typed relations link here.\n")
+# ------------------------------------------------------- candidate sentences
+
+def ingest_slug(rel: str) -> str:
+    """The slug `gbrain import` gives an ingest path: lowercased, runs of hyphens
+    collapsed, hyphens trimmed per segment (`youtube/c/-AbC` → `youtube/c/abc`)."""
+    rel = rel[:-3] if rel.endswith(".md") else rel
+    return "/".join(re.sub(r"-{2,}", "-", seg).strip("-") for seg in rel.lower().split("/"))
+
+
+# SEC company titles → the name text uses: "NVIDIA CORP" → "nvidia",
+# "Micron Technology, Inc." → "micron technology".
+_COMPANY_SUFFIX = re.compile(
+    r"\b(inc|incorporated|corp|corporation|co|company|companies|ltd|limited|plc|holdings?|group|"
+    r"n\.?v|s\.?a|ag|se|llc|l\.?p|trust|class [a-z]|common stock|ordinary shares|ads|adr)\b\.?"
+    r"|/[a-z]{2,3}/?|[.,&]", re.I)
+# A single-word name that is also an everyday word would match all over prose.
+_GENERIC_NAMES = {
+    "target", "block", "visa", "gap", "match", "ball", "best", "bill", "box", "cars", "check", "compass",
+    "digital", "energy", "equity", "first", "future", "general", "global", "gold", "golden", "group",
+    "harmony", "international", "life", "live", "lucid", "mobile", "national", "news", "next", "ocean",
+    "open", "par", "power", "progressive", "rocket", "sea", "sonic", "southern", "square", "star",
+    "sun", "super", "trade", "united", "unity", "universal", "vital", "western", "american", "applied",
+    "advanced", "micro", "the", "new", "one", "data", "cloud", "core", "prime", "home", "health", "arm",
+    "blue", "real", "good", "true", "play", "fast", "high", "light", "north", "south", "east", "west",
+    "great", "royal", "bank", "smart", "clear", "black", "white", "green", "silver", "summit", "alpha",
+    "bullish", "bearish",  # tickers exist for both; in fintwit they are always sentiment
+}
+
+
+def clean_company(title: str) -> str:
+    n = _COMPANY_SUFFIX.sub(" ", title or "")
+    return re.sub(r"\s+", " ", n).strip().lower()
+
+
+def _looks_proper(title: str) -> bool:
+    """An entity page title that reads as a name ("COMAC", "SoFi", "Sam Altman"),
+    not a phrase the old open-schema pass minted ("later this year", "2026")."""
+    words = title.split()
+    return (3 <= len(title) <= 40 and 1 <= len(words) <= 4 and _is_entity_name(title)
+            and title.lower() not in ENTITY_STOP
+            and all(w[0].isupper() or w[0].isdigit() for w in words))
+
+
+def build_dictionary(rows: list[tuple[str, str]], sec: dict[str, str],
+                     english: frozenset[str] = frozenset()) -> tuple[dict, dict, set]:
+    """(names, symbols, proper). names: normalized name → entity slug; symbols:
+    SYMBOL → ticker slug; proper: names that are also everyday English words
+    ("apple", "micron", "oracle") and so only count when capitalised in the text.
+    Tickers win a name collision with an entity page."""
+    names: dict[str, str] = {}
+    symbols: dict[str, str] = {}
+    proper: set[str] = set()
+
+    def add(n: str, slug: str) -> None:
+        if len(n) < 3 or n in _GENERIC_NAMES or n.upper() in CASHTAG_STOP_WORDS or n in names:
+            return
+        names[n] = slug
+        if " " not in n and n in english:
+            proper.add(n)
+
+    for slug, title in rows:
+        if slug.startswith("ticker/"):
+            sym = slug.split("/", 1)[1].upper()
+            symbols[sym] = slug
+            full = clean_company(sec.get(sym, ""))
+            add(full, slug)
+            words = full.split()
+            if len(words) >= 2 and len(words[0]) >= 4:
+                add(words[0], slug)  # "micron technology" → also "micron"
+    for slug, title in rows:
+        if slug.startswith("entities/") and title and _looks_proper(title):
+            n = _norm(title)
+            # an everyday word as a whole entity name is an old open-schema stub
+            # ("Compute", "Revenue", "Space"); a stub named like a ticker duplicates it
+            if (" " not in n and n in english) or n.upper() in symbols:
+                continue
+            add(n, slug)
+            if names.get(n) == slug:
+                proper.add(n)  # a stub's name must be written as a name ("Data Center", not "data center")
+    return names, symbols, proper
+
+
+def english_words() -> frozenset[str]:
+    try:
+        return frozenset(w.strip().lower() for w in open("/usr/share/dict/words", errors="ignore"))
+    except OSError:
+        return frozenset()
+
+
+def load_dictionary() -> tuple[dict, dict, set]:
+    """Ticker hubs and entity pages from the brain (one read-only query) + SEC names."""
+    url = json.loads((HOME / ".gbrain" / "config.json").read_text())["database_url"]
+    r = subprocess.run(
+        ["psql", url, "-At", "-F", "\t", "-v", "ON_ERROR_STOP=1", "-c",
+         "SELECT slug, coalesce(title, '') FROM pages WHERE deleted_at IS NULL "
+         "AND (slug LIKE 'ticker/%' OR slug LIKE 'entities/%')"],
+        capture_output=True, text=True, timeout=60,
+        env={**os.environ, "PGOPTIONS": "-c default_transaction_read_only=on"})
+    if r.returncode != 0:
+        raise SystemExit(f"[llm-relations] cannot read entity pages: {r.stderr.strip()[:200]}")
+    rows = [tuple(l.split("\t", 1)) for l in r.stdout.splitlines() if "\t" in l]
+    try:
+        sec = {v["ticker"].upper(): v["title"] for v in json.loads(SEC_TICKERS.read_text()).values()}
+    except (OSError, ValueError, KeyError):
+        sec = {}
+    return build_dictionary(rows, sec, english_words())
+
+
+def sentences(text: str) -> list[str]:
+    """Sentences of a markdown body: split on terminal punctuation and on lines,
+    list markers and link syntax removed, whitespace collapsed."""
+    out = []
+    for part in re.split(r"(?<=[.!?])\s+|\n+", text or ""):
+        part = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", part)          # [text](url) → text
+        part = re.sub(r"^\s*(?:[-*+>]|\d+[.)])\s+", "", part)           # list / quote markers
+        part = re.sub(r"\s+", " ", part).strip()
+        if SENT_MIN <= len(part) <= SENT_MAX:
+            out.append(part)
+    return out
+
+
+_SYMBOL = re.compile(r"\$([A-Za-z]{1,5})\b|(?<![A-Za-z0-9$])([A-Z]{3,5})(?![A-Za-z0-9])")
+
+
+class Matcher:
+    """Finds known entities in a sentence: names (case-insensitive, whole words,
+    longest first; everyday-word names only when capitalised) and ticker symbols
+    ($any-case, or bare 3-5 capitals)."""
+
+    def __init__(self, names: dict[str, str], symbols: dict[str, str], proper: set[str] | None = None) -> None:
+        self.names, self.symbols, self.proper = names, symbols, proper or set()
+        alts = sorted(names, key=len, reverse=True)
+        self.rx = re.compile(r"(?<![A-Za-z0-9])(" + "|".join(map(re.escape, alts)) + r")(?![A-Za-z0-9])",
+                             re.I) if alts else None
+
+    def find(self, sentence: str) -> dict[str, str]:
+        """slug → the entity's surface form as written in the sentence."""
+        found: dict[str, str] = {}
+        if self.rx:
+            for m in self.rx.finditer(sentence):
+                surf = m.group(1)
+                key = _norm(surf)
+                if key in self.proper and not surf[0].isupper():
+                    continue  # "the apple of", "space", "compute"
+                if key in self.names:
+                    found.setdefault(self.names[key], surf)
+        for m in _SYMBOL.finditer(sentence):
+            sym = (m.group(1) or m.group(2)).upper()
+            if sym in self.symbols and sym not in CASHTAG_STOP_WORDS:
+                found.setdefault(self.symbols[sym], m.group(1) or m.group(2))
+        return found
+
+
+# Bare capitals that are words or jargon, not symbols ("CEO", "GPU", "USA").
+CASHTAG_STOP_WORDS = {
+    "CEO", "CFO", "COO", "CTO", "GPU", "CPU", "USA", "USD", "EUR", "IPO", "ETF", "EPS", "GDP", "FED",
+    "SEC", "FDA", "DOE", "DOD", "API", "LLM", "AGI", "ATH", "YTD", "EOD", "IMO", "LOL", "THE", "AND",
+    "FOR", "NOT", "ALL", "NEW", "BUY", "NOW", "TOP", "BIG", "HBM", "DRAM", "AI", "EV", "NFT", "ESG",
+}
+
+
+def candidates(body: str, matcher: Matcher) -> list[dict]:
+    """Sentences naming ≥2 distinct known entities, first MAX_CANDIDATES_PER_PAGE."""
+    out, seen = [], set()
+    for sent in sentences(body):
+        key = _norm(sent)
+        if key in seen:
+            continue
+        found = matcher.find(sent)
+        if len(found) >= 2:
+            seen.add(key)
+            out.append({"sentence": sent, "entities": found})
+            if len(out) >= MAX_CANDIDATES_PER_PAGE:
+                break
+    return out
+
+
+def candidate_prompt(title: str, cands: list[dict]) -> str:
+    lines = [f"Title: {title}", ""]
+    for i, c in enumerate(cands, 1):
+        lines.append(f"[{i}] {c['sentence']}")
+        lines.append("    entities: " + "; ".join(dict.fromkeys(c["entities"].values())))
+    return "\n".join(lines)
+
+
+def resolve_pair(rel: dict, cands: list[dict]) -> tuple[dict, str, str, str, str] | None:
+    """(candidate, subject slug, subject name, object slug, object name) for a model
+    answer, or None when it points at no sentence or names an entity not in it."""
+    try:
+        i = int(rel.get("i"))
+    except (TypeError, ValueError):
+        return None
+    if not 1 <= i <= len(cands):
+        return None
+    c = cands[i - 1]
+    by_name = {v.lower(): (slug, v) for slug, v in c["entities"].items()}
+    s = by_name.get(str(rel.get("subject", "")).strip().lower())
+    o = by_name.get(str(rel.get("object", "")).strip().lower())
+    if not s or not o or s[0] == o[0]:
+        return None
+    return c, s[0], s[1], o[0], o[1]
 
 
 def main() -> None:
@@ -396,62 +596,63 @@ def main() -> None:
     shadow = not args.write and not args.dry_run
     done_key = "shadow_pages" if shadow else "pages"
     done_pages = set(st.get(done_key, []))
-    ent_pages = set(st.get("entity_pages", []))
     edges = {tuple(e) for e in st.get("edges", [])}
-    tickers = known_tickers()
+    matcher = Matcher(*load_dictionary())
 
+    # Every eligible page in the window is scanned (a regex pass, no model); the
+    # model then sees the pages with the most candidate sentences first.
     cutoff = time.time() - args.days * 86400
-    candidates = []
-    for f in sorted(ING.rglob("*.md"), key=lambda p: p.stat().st_mtime, reverse=True):
+    scanned, ranked = 0, []
+    for f in ING.rglob("*.md"):
         rel = f.relative_to(ING).as_posix()
-        slug = rel[:-3] if rel.endswith(".md") else rel
-        if slug in done_pages or rel.startswith(SKIP_PREFIXES):
+        slug = ingest_slug(rel)
+        if rel.startswith(SKIP_PREFIXES) or (args.only_prefix and not rel.startswith(args.only_prefix)):
             continue
-        if args.only_prefix and not rel.startswith(args.only_prefix):
+        if slug in done_pages or rel[:-3] in done_pages:  # older state used the raw relpath
             continue
         if f.stat().st_mtime < cutoff:
-            break  # sorted newest-first; everything after is older
-        candidates.append((slug, f))
-        if len(candidates) >= args.limit:
-            break
+            continue
+        scanned += 1
+        title, body = page_text(f)
+        cands = candidates(body, matcher)
+        if cands:  # pages without a pair stay unmarked: tomorrow's dictionary may pair them
+            ranked.append((len(cands), slug, f, title, cands))
+    ranked.sort(key=lambda t: (-t[0], t[1]))
+    todo = ranked[: args.limit]
 
     mode = "SHADOW (review file only)" if shadow else "DRY RUN" if args.dry_run else "WRITE"
-    log(f"{mode} model={args.model} days={args.days} → {len(candidates)} pages to process "
+    log(f"{mode} model={args.model} days={args.days} · dictionary {len(matcher.names)} names + "
+        f"{len(matcher.symbols)} symbols · scanned {scanned} pages, {len(ranked)} with candidate "
+        f"sentences ({sum(t[0] for t in ranked)}) → {len(todo)} to process "
         f"(prior: {len(done_pages)} pages, {len(edges)} graph edges)")
 
     system = SYSTEM_PROMPT.format(max_rel=MAX_RELATIONS_PER_PAGE, schema=SCHEMA_TEXT)
     new_edges = shadow_rows = 0
     verdicts: dict[str, int] = {}
-    for slug, f in candidates:
-        title, body = page_text(f)
+    for _n, slug, f, title, cands in todo:
         page_n = _norm(f.read_text(errors="ignore"))  # the gate checks quotes against the whole page
-        if len(body) < 80:  # ticker lists / stubs: nothing relational in there
-            done_pages.add(slug)
-            continue
         try:
-            raw = ollama_chat(args.ollama, args.model, system, f"Title: {title}\n\n{body}")
+            raw = ollama_chat(args.ollama, args.model, system, candidate_prompt(title, cands))
         except Exception as e:  # noqa: BLE001
             log(f"  {slug}: ollama call failed ({type(e).__name__}) — will retry next run")
             continue
         rels = parse_relations(raw)
         if args.dry_run:
-            log(f"  {slug}: {len(rels)} proposed")
+            log(f"  {slug}: {len(cands)} candidate sentences, {len(rels)} labelled")
         kept = []
         for r in rels:
             pred = norm_predicate(str(r.get("predicate", "")))
-            s_res = entity_slug(str(r.get("subject", "")), tickers)
-            o_res = entity_slug(str(r.get("object", "")), tickers)
-            if not pred or len(pred) < 3 or not s_res or not o_res:
+            pair = resolve_pair(r, cands)
+            if not pred or not pair:
+                verdicts["not_a_candidate_pair"] = verdicts.get("not_a_candidate_pair", 0) + 1
                 continue
-            s_slug, s_name = s_res
-            o_slug, o_name = o_res
-            if s_slug == o_slug:
-                continue
+            c, s_slug, s_name, o_slug, o_name = pair
+            r = {**r, "quote": c["sentence"]}  # the receipt is the sentence code found, verbatim
             quote, verdict = quote_gate(r, s_name, o_name, pred, page_n)
             verdicts[verdict] = verdicts.get(verdict, 0) + 1
             if args.dry_run:
                 mark = "KEEP" if quote else f"DROP {verdict}"
-                log(f"  {mark:28} {s_name} --{pred}--> {o_name} | {str(r.get('quote') or '')[:110]!r}")
+                log(f"  {mark:28} {s_name} --{pred}--> {o_name} | {c['sentence'][:110]!r}")
             if shadow:
                 shadow_rows += 1
                 with SHADOW_LOG.open("a") as fh:
@@ -460,6 +661,7 @@ def main() -> None:
                         "subject": s_name, "subject_slug": s_slug, "predicate": pred,
                         "object": o_name, "object_slug": o_slug, "quote": str(r.get("quote") or "")[:QUOTE_MAX],
                         "gate": verdict, "label": None,   # label: "correct" | "wrong" (human review)
+                        "mode": "candidates",  # rows before 2026-09-24 came from whole-page reading
                     }) + "\n")
             if quote:
                 kept.append((s_slug, s_name, pred, o_slug, o_name, quote))
@@ -472,15 +674,7 @@ def main() -> None:
             continue
 
         for s_slug, s_name, pred, o_slug, o_name, quote in kept:
-            # 1) ensure both entity pages exist (ticker/ pages already do)
-            for eslug, ename in ((s_slug, s_name), (o_slug, o_name)):
-                if eslug.startswith("entities/") and eslug not in ent_pages:
-                    rc, out = gb(["put", eslug], stdin=ENTITY_PAGE_TMPL.format(name=ename or eslug.split("/", 1)[1]))
-                    if rc == 0:
-                        ent_pages.add(eslug)
-                    else:
-                        log(f"  put FAILED {eslug}: {out.strip()[:120]}")
-            # 2) the typed edge itself
+            # both ends came from the dictionary, so both pages already exist
             key = (s_slug, o_slug, pred)
             if key in edges:
                 continue
@@ -495,17 +689,16 @@ def main() -> None:
                 log(f"  link FAILED {s_slug} --{pred}--> {o_slug}: {out.strip()[:120]}")
 
         done_pages.add(slug)
-        st.update({done_key: sorted(done_pages)}, entity_pages=sorted(ent_pages),
-                  edges=[list(e) for e in edges])
+        st.update({done_key: sorted(done_pages)}, edges=[list(e) for e in edges])
         save_state(st)
 
     kept_n = verdicts.get("ok", 0)
     dropped = {k: v for k, v in sorted(verdicts.items(), key=lambda kv: -kv[1]) if k != "ok"}
     log(f"quote gate: {kept_n} of {sum(verdicts.values())} proposed relations passed; dropped {dropped or 'none'}")
     if shadow:
-        log(f"DONE (shadow) — pages: {len(candidates)}, proposals logged: {shadow_rows} → {SHADOW_LOG}")
+        log(f"DONE (shadow) — pages: {len(todo)}, proposals logged: {shadow_rows} → {SHADOW_LOG}")
     else:
-        log(f"DONE — pages processed: {len(candidates)}, new edges: {new_edges}, total edges: {len(edges)}")
+        log(f"DONE — pages processed: {len(todo)}, new edges: {new_edges}, total edges: {len(edges)}")
 
 
 if __name__ == "__main__":
