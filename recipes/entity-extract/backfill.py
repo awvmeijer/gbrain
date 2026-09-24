@@ -94,14 +94,31 @@ def save_state(st: dict) -> None:
     STATE.write_text(json.dumps(st))
 
 
-def existing_slugs() -> set[str]:
-    _, out = gb(["list", "--limit", "5000"])
-    slugs = set()
-    for ln in out.splitlines():
-        p = ln.split("\t")
-        if p and "/" in p[0]:
-            slugs.add(p[0].strip())
-    return slugs
+def brain_slugs() -> set[str]:
+    """Every live slug, from one read-only query. (`gbrain list` caps at 100 rows,
+    which is why this used to fall back to a `gbrain get` per entity.)"""
+    url = json.loads((HOME / ".gbrain" / "config.json").read_text())["database_url"]
+    r = subprocess.run(["psql", url, "-At", "-v", "ON_ERROR_STOP=1", "-c",
+                        "SELECT slug FROM pages WHERE deleted_at IS NULL"],
+                       capture_output=True, text=True, timeout=120,
+                       env={**os.environ, "PGOPTIONS": "-c default_transaction_read_only=on"})
+    if r.returncode != 0:
+        raise SystemExit(f"[entity-extract] cannot list brain slugs: {r.stderr.strip()[:200]}")
+    return {ln for ln in r.stdout.splitlines() if ln}
+
+
+def page_slug(rel: str, slugs: set[str]) -> str | None:
+    """The brain slug an ingest file was imported as, or None. Import lowercases and
+    normalises hyphens (`capture/2026-07-01T152411-x` → `capture/2026-07-01t152411-x`,
+    `telegram/1---scanner` → `telegram/1-scanner`, `youtube/c/-abc` → `youtube/c/abc`),
+    so the raw relpath matched only ~15% of pages and every other link failed."""
+    if rel in slugs:
+        return rel
+    low = rel.lower()
+    if low in slugs:
+        return low
+    norm = "/".join(re.sub(r"-{2,}", "-", seg).strip("-") for seg in low.split("/"))
+    return norm if norm in slugs else None
 
 
 PAGE_TMPL = {
@@ -119,7 +136,7 @@ def main() -> None:
     st = load_state()
     created = set(st["pages"])
     edges = set(tuple(e) for e in st["edges"])
-    have = existing_slugs()
+    have = brain_slugs()
     log(f"existing pages: {len(have)}; prior created: {len(created)}; prior edges: {len(edges)}")
 
     files = sorted(ING.rglob("*.md"))
@@ -133,16 +150,16 @@ def main() -> None:
         e = ents.setdefault(ent_slug, (kind, token, set()))
         e[2].add((src, link_type))
 
-    scanned = 0
+    scanned = unimported = 0
     for f in files:
         try:
             rel = f.relative_to(ING).as_posix()
         except ValueError:
             continue
-        slug = rel[:-3] if rel.endswith(".md") else rel  # strip .md
-        # NOTE: `gbrain list` hard-caps at 100 rows, so `have` is incomplete;
-        # the ingest relpath == brain slug (verified), so we link from all pages
-        # and let `gbrain link` validate existence (rare misses are logged).
+        slug = page_slug(rel[:-3] if rel.endswith(".md") else rel, have)
+        if slug is None:  # not imported (yet): nothing to link from
+            unimported += 1
+            continue
         body = f.read_text(errors="ignore")
         scanned += 1
         for sym in _cashtags(body):
@@ -159,7 +176,8 @@ def main() -> None:
 
     n_ent = len(ents)
     n_edge = sum(len(v[2]) for v in ents.values())
-    log(f"scanned {scanned} pages → {n_ent} entities, {n_edge} candidate edges")
+    log(f"scanned {scanned} pages ({unimported} files not in the brain, skipped) → "
+        f"{n_ent} entities, {n_edge} candidate edges")
     if DRY:
         top = sorted(ents.items(), key=lambda kv: -len(kv[1][2]))[:15]
         for slug, (kind, tok, srcs) in top:
@@ -171,13 +189,8 @@ def main() -> None:
     for ent_slug, (kind, token, _srcs) in ents.items():
         if ent_slug in created or ent_slug in have:
             continue
-        # `have` is capped (gbrain list returns ≤100 rows), so confirm absence
-        # before `put` — otherwise an existing page (e.g. an EDGAR filing page)
-        # would be overwritten with the stub template.
-        rc_get, _ = gb(["get", ent_slug])
-        if rc_get == 0:
-            have.add(ent_slug)
-            continue
+        # `have` is every live slug, so an existing page (e.g. an EDGAR filing
+        # page) is never overwritten with the stub template.
         content = PAGE_TMPL[kind].format(t=token)
         rc, out = gb(["put", ent_slug], stdin=content)
         if rc == 0:
@@ -190,7 +203,7 @@ def main() -> None:
     log(f"entity pages created this run: {made}")
 
     # 2) create typed edges
-    linked = 0
+    linked = failed = 0
     for ent_slug, (kind, token, srcs) in ents.items():
         if ent_slug not in created and ent_slug not in have:
             continue
@@ -204,9 +217,13 @@ def main() -> None:
                 if linked % 50 == 0:
                     st["edges"] = [list(e) for e in edges]; save_state(st); log(f"  linked {linked} edges…")
             else:
-                log(f"  link FAILED {src} -> {ent_slug}: {out.strip()[:120]}")
+                failed += 1
+                if failed <= 20:  # a systematic failure must not bury the log (09-24: 2,229 lines)
+                    err = [l for l in out.splitlines() if "UPGRADE_AVAILABLE" not in l and "self-upgrade" not in l]
+                    log(f"  link FAILED {src} -> {ent_slug}: {' '.join(err).strip()[:160]}")
     st["edges"] = [list(e) for e in edges]; save_state(st)
-    log(f"DONE — edges created this run: {linked}; total pages={len(created)}, total edges={len(edges)}")
+    log(f"DONE — edges created this run: {linked}; failed: {failed}; "
+        f"total pages={len(created)}, total edges={len(edges)}")
 
 
 if __name__ == "__main__":
