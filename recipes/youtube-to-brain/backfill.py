@@ -39,7 +39,7 @@ import httpx
 import requests
 
 from collect import (UA, ASR_MAX_PER_RUN, _asr_available, _asr_transcript,
-                     _channels, _slug, suspect_content_year)
+                     _channels, _slug, _yaml_str, suspect_content_year)
 
 # youtube_transcript_api drives requests under the hood and passes NO timeout,
 # so a half-open socket (server accepted the connection then went silent) blocks
@@ -114,7 +114,15 @@ def watch_meta(client: httpx.Client, video_id: str) -> dict:
         if m := re.search(r'"uploadDate":"(\d{4}-\d{2}-\d{2})', r.text):
             meta["date"] = m.group(1)
         if m := re.search(r'"videoDetails":.*?"title":"((?:[^"\\]|\\.)*)"', r.text):
-            meta["title"] = m.group(1).encode().decode("unicode_escape", "ignore")
+            # The capture is a JSON string body — decode it as JSON. The old
+            # `.encode().decode("unicode_escape")` mangled every non-ASCII char
+            # (UTF-8 bytes reinterpreted as Latin-1: ' → â + two C1 control
+            # bytes), which then failed the gbrain import as YAML
+            # "non-printable characters".
+            try:
+                meta["title"] = json.loads(f'"{m.group(1)}"')
+            except ValueError:
+                meta["title"] = m.group(1)
         if m := re.search(r'"channelId":"(UC[\w-]+)"', r.text):
             meta["cid"] = m.group(1)
     except Exception as e:  # noqa: BLE001
@@ -183,6 +191,7 @@ def main() -> int:
                     txt = txt[: args.max_chars] + "\n\n[transcript truncated]"
                 meta = watch_meta(client, vid)
                 safe_title = meta["title"].replace('"', "'")
+                fm_title = _yaml_str(meta["title"])
                 stale_year = suspect_content_year(txt, meta["date"])
                 stale_fm = (
                     f"stale_content: true\ncontent_date_review: {stale_year}\n"
@@ -191,9 +200,9 @@ def main() -> int:
                 asr_fm = "asr: whisper-local\n" if asr else ""
                 body = (
                     f"---\n"
-                    f"title: {safe_title}\n"
+                    f"title: {fm_title}\n"
                     f"source: youtube\n"
-                    f"channel: {handle}\n"
+                    f"channel: {_yaml_str(handle)}\n"
                     f"channel_id: {meta['cid']}\n"
                     f"video_id: {vid}\n"
                     f"url: https://youtu.be/{vid}\n"

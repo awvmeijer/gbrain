@@ -151,18 +151,252 @@ def _latest_videos(client: httpx.Client, channel_id: str) -> list[dict]:
     return out
 
 
+# --- unblocking YouTube -------------------------------------------------------
+# 2026-09-13 onward both fetch paths went dark: the timedtext endpoint returns
+# IpBlocked for this residential IP, and yt-dlp gets "Sign in to confirm you're
+# not a bot". Seven days of zero pages. Both gates lift with a logged-in cookie
+# jar, so both paths read the SAME Netscape-format file.
+#
+# A FILE, never --cookies-from-browser: that path decrypts via the login
+# Keychain, and a Keychain read from a launchd subprocess blocks on securityd
+# waiting for a prompt no cron can answer (standing rule, 2026-09-15). The file
+# is 0600 under ~/.gbrain/ like every other secret here.
+#
+# Optional egress proxy for the transcript API (YOUTUBE_PROXY, e.g.
+# http://user:pass@host:port). Left unset by default — no metered spend.
+# Everything here degrades to exactly the old behaviour when unconfigured.
+COOKIE_FILE = Path(os.environ.get(
+    "YOUTUBE_COOKIES", str(Path.home() / ".gbrain" / "youtube-cookies.txt")))
+YOUTUBE_PROXY = os.environ.get("YOUTUBE_PROXY", "").strip()
+
+
+# Only these domains belong in the jar. `--cookies-from-browser chrome` dumps
+# the ENTIRE Chrome cookie store — 2262 cookies across 675 domains on this
+# machine, every logged-in site plus a few hundred ad trackers — into one
+# plaintext file. YouTube needs 8 domains. Every refresh trims back down, so an
+# automated re-export can never quietly recreate that credential pile.
+_GOOGLE_DOMAIN = re.compile(
+    r"(^|\.)(youtube\.com|google\.com|googlevideo\.com|ytimg\.com|ggpht\.com|"
+    r"gstatic\.com|googleapis\.com|youtube-nocookie\.com)$")
+
+# Which browser to re-export from, and how long to let that attempt run.
+COOKIE_BROWSER = os.environ.get("YOUTUBE_COOKIE_BROWSER", "chrome")
+COOKIE_REFRESH_TIMEOUT = int(os.environ.get("YOUTUBE_COOKIE_REFRESH_TIMEOUT", "45"))
+COOKIE_REFRESH_AFTER = 3          # block-type misses before trying a refresh
+_COOKIE_PROBE = "dQw4w9WgXcQ"     # any always-available video
+# Present only in a signed-in jar; any one of them means the export is usable.
+_LOGIN_COOKIES = frozenset({"SID", "__Secure-1PSID", "__Secure-3PSID"})
+
+
+def _trim_cookies(text: str) -> tuple[str, int]:
+    """Keep only Google/YouTube cookie lines. Returns (netscape_text, kept)."""
+    out = ["# Netscape HTTP Cookie File"]
+    kept = 0
+    for line in text.splitlines():
+        if line.startswith("#") or not line.strip():
+            continue
+        parts = line.split("\t")
+        if len(parts) < 7:
+            continue
+        if _GOOGLE_DOMAIN.search(parts[0].lstrip(".")):
+            out.append(line)
+            kept += 1
+    return "\n".join(out) + "\n", kept
+
+
+def _install_cookie_file(text: str) -> None:
+    """Atomically replace the jar at 0600 — it is a live Google session."""
+    tmp = COOKIE_FILE.with_name(COOKIE_FILE.name + ".tmp")
+    tmp.write_text(text)
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, COOKIE_FILE)
+
+
+def _refresh_cookies_from_browser() -> bool:
+    """Re-export cookies from the local browser, trimmed to Google domains.
+
+    Hard-timed on purpose. Decrypting Chrome's cookie store needs the login
+    Keychain, and a Keychain read from a launchd subprocess blocks on securityd
+    waiting for a prompt no cron can answer (standing rule, 2026-09-15). The
+    timeout means the nightly run degrades to "still stale — banner fires"
+    instead of wedging the pipeline. Run interactively, it just works.
+
+    Success is judged by the FILE, never the exit code: yt-dlp writes the jar
+    and *then* often fails the metadata fetch ("The page needs to be reloaded"),
+    exiting non-zero with perfectly good cookies already on disk.
+    """
+    ytdlp = str(HERE / ".venv" / "bin" / "yt-dlp")
+    with tempfile.TemporaryDirectory(prefix="yt-cookies-") as td:
+        dest = Path(td) / "cookies.txt"
+        try:
+            subprocess.run(
+                [ytdlp, "--cookies-from-browser", COOKIE_BROWSER,
+                 "--cookies", str(dest), "--skip-download", "--quiet",
+                 "--no-warnings", f"https://www.youtube.com/watch?v={_COOKIE_PROBE}"],
+                capture_output=True, text=True, timeout=COOKIE_REFRESH_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            print(f"    cookies: refresh from {COOKIE_BROWSER} timed out after "
+                  f"{COOKIE_REFRESH_TIMEOUT}s (Keychain locked, or no GUI session) "
+                  f"— jar left as-is", file=sys.stderr)
+            return False
+        except OSError as e:
+            print(f"    cookies: refresh failed ({type(e).__name__})", file=sys.stderr)
+            return False
+        if not dest.is_file():
+            print("    cookies: browser export produced no file", file=sys.stderr)
+            return False
+        text, kept = _trim_cookies(dest.read_text(errors="ignore"))
+        # Exact cookie names (column 6), not substrings: "SID" is inside SIDCC,
+        # which Google also sets for signed-out visitors.
+        names = {ln.split("\t")[5] for ln in text.splitlines()[1:]}
+        if not names & _LOGIN_COOKIES:
+            print("    cookies: export carried no login cookies — not signed in?",
+                  file=sys.stderr)
+            return False
+        _install_cookie_file(text)
+        print(f"    cookies: refreshed from {COOKIE_BROWSER} "
+              f"({kept} google cookies, 0600)", file=sys.stderr)
+        return True
+
+
+def _cookie_file() -> Path | None:
+    """The cookie jar, if it exists and is non-empty."""
+    try:
+        if COOKIE_FILE.is_file() and COOKIE_FILE.stat().st_size > 0:
+            return COOKIE_FILE
+    except OSError:
+        pass
+    return None
+
+
+_CLIENT: list = []   # memoized session (or [None]) — one jar for the whole run
+_JAR: list = []      # the live MozillaCookieJar, so rotations can be saved back
+
+
+def _transcript_client():
+    """A requests.Session carrying the cookie jar, or None to use the default.
+
+    youtube_transcript_api takes `http_client`; loading cookies into a session
+    is what turns an IpBlocked anonymous fetch into an authenticated one.
+    Memoized so one jar serves the whole run and accumulates the rotations
+    Google hands back — see _save_cookies for why that matters.
+    """
+    if _CLIENT:
+        return _CLIENT[0]
+    cf = _cookie_file()
+    if cf is None:
+        _CLIENT.append(None)
+        return None
+    try:
+        import http.cookiejar
+        import requests
+        jar = http.cookiejar.MozillaCookieJar(str(cf))
+        jar.load(ignore_discard=True, ignore_expires=True)
+        sess = requests.Session()
+        sess.cookies = jar  # type: ignore[assignment]
+        sess.headers.update({"User-Agent": UA_STR, "Accept-Language": "en-US,en;q=0.9"})
+        _JAR.append(jar)
+        _CLIENT.append(sess)
+        return sess
+    except Exception as e:  # noqa: BLE001 — malformed jar must not kill the run
+        print(f"    cookies: unusable ({type(e).__name__}) — anonymous fetch",
+              file=sys.stderr)
+        _CLIENT.append(None)
+        return None
+
+
+def _save_cookies() -> None:
+    """Write the jar back, keeping the session alive across runs.
+
+    THIS is what stops the cookies going stale. Google re-issues the rotating
+    auth cookies (__Secure-1PSIDTS, SIDCC) on essentially every request; a jar
+    that is read but never written keeps re-presenting the snapshot taken at
+    export time until the server stops accepting it. Persisting each rotation
+    means the session renews itself nightly and only a real invalidation —
+    password change, explicit sign-out, a Google security event — can end it.
+    Nominal expiry is not the constraint (SIDCC is dated a year out); the stale
+    rotating token is.
+    """
+    if not _JAR:
+        return
+    try:
+        tmp = COOKIE_FILE.with_name(COOKIE_FILE.name + ".tmp")
+        _JAR[0].save(str(tmp), ignore_discard=True, ignore_expires=True)
+        text, kept = _trim_cookies(tmp.read_text(errors="ignore"))
+        tmp.unlink(missing_ok=True)
+        if kept:
+            _install_cookie_file(text)
+    except Exception as e:  # noqa: BLE001 — never fail a run over bookkeeping
+        print(f"    cookies: could not persist rotations ({type(e).__name__})",
+              file=sys.stderr)
+
+
+UA_STR = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+          "(KHTML, like Gecko) Chrome/127.0 Safari/537.36")
+
+_WARNED: list[str] = []
+_BLOCK_HITS: list[str] = []   # block-type transcript misses this run
+_REFRESHED: list[bool] = []   # at most one browser re-export per run
+
+
+def _warn_once(key: str, msg: str) -> None:
+    if key not in _WARNED:
+        _WARNED.append(key)
+        print(msg, file=sys.stderr)
+
+
 def _transcript(video_id: str) -> str | None:
     from youtube_transcript_api import YouTubeTranscriptApi
+    kwargs = {}
+    client = _transcript_client()
+    if client is not None:
+        kwargs["http_client"] = client
+    elif not YOUTUBE_PROXY:
+        _warn_once("nocookies",
+                   f"    note: no cookie jar at {COOKIE_FILE} and no YOUTUBE_PROXY "
+                   f"— anonymous fetch, expect IpBlocked")
+    if YOUTUBE_PROXY:
+        try:
+            from youtube_transcript_api.proxies import GenericProxyConfig
+            kwargs["proxy_config"] = GenericProxyConfig(
+                http_url=YOUTUBE_PROXY, https_url=YOUTUBE_PROXY)
+        except Exception as e:  # noqa: BLE001
+            _warn_once("noproxy", f"    proxy config unusable: {type(e).__name__}")
     try:
-        fetched = YouTubeTranscriptApi().fetch(video_id)
+        fetched = YouTubeTranscriptApi(**kwargs).fetch(video_id)
         return " ".join(s.text for s in fetched).strip()
     except Exception as e:  # noqa: BLE001 — no captions / disabled / blocked
-        print(f"    transcript miss {video_id}: {type(e).__name__}", file=sys.stderr)
+        name = type(e).__name__
+        print(f"    transcript miss {video_id}: {name}", file=sys.stderr)
+        # A run of block-type misses means the jar went stale (or never
+        # existed). Try ONE browser re-export per run, then retry this video
+        # once. Captionless videos raise a different error and never get here,
+        # so this cannot fire on ordinary misses.
+        if ("Block" in name or "TooManyRequests" in name) and not _REFRESHED:
+            _BLOCK_HITS.append(video_id)
+            if len(_BLOCK_HITS) >= COOKIE_REFRESH_AFTER:
+                _REFRESHED.append(True)
+                print(f"    cookies: {len(_BLOCK_HITS)} block-type misses — "
+                      f"re-exporting from {COOKIE_BROWSER}", file=sys.stderr)
+                if _refresh_cookies_from_browser():
+                    _CLIENT.clear()
+                    _JAR.clear()
+                    return _transcript(video_id)
         return None
 
 
 def _slug(h: str) -> str:
     return h.lstrip("@").lower()
+
+
+def _yaml_str(s: str) -> str:
+    """A frontmatter-safe scalar: control chars stripped, then JSON-quoted
+    (valid YAML double-quoted flow scalar). Unquoted values broke the gbrain
+    import for every page here — `@handle` starts with a YAML reserved
+    indicator, and titles carry `: `, quotes, and (via a backfill decode bug)
+    C1 control bytes."""
+    s = re.sub(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]", "", s)
+    return json.dumps(s, ensure_ascii=False)
 
 
 # --- ASR fallback (captionless videos) ---------------------------------------
@@ -214,13 +448,15 @@ def _asr_transcript(video_id: str) -> str | None:
     ytdlp = str(HERE / ".venv" / "bin" / "yt-dlp")
     with tempfile.TemporaryDirectory(prefix="yt-asr-") as td:
         try:
-            r = subprocess.run(
-                [ytdlp, "-f", "bestaudio[ext=m4a]/bestaudio",
-                 "-o", str(Path(td) / "audio.%(ext)s"),
-                 "--match-filter", f"duration<={ASR_MAX_DURATION}",
-                 "--socket-timeout", "20", "--quiet", "--no-warnings",
-                 f"https://youtu.be/{video_id}"],
-                capture_output=True, text=True, timeout=300)
+            cmd = [ytdlp, "-f", "bestaudio[ext=m4a]/bestaudio",
+                   "-o", str(Path(td) / "audio.%(ext)s"),
+                   "--match-filter", f"duration<={ASR_MAX_DURATION}",
+                   "--socket-timeout", "20", "--quiet", "--no-warnings"]
+            cf = _cookie_file()
+            if cf is not None:  # lifts "Sign in to confirm you're not a bot"
+                cmd += ["--cookies", str(cf)]
+            cmd.append(f"https://youtu.be/{video_id}")
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
         except (OSError, subprocess.TimeoutExpired) as e:
             print(f"    asr: download failed {video_id}: {type(e).__name__}",
                   file=sys.stderr)
@@ -344,6 +580,7 @@ def main() -> None:
                     txt = txt[: args.max_chars] + "\n\n[transcript truncated]"
                 title = v["title"] or v["id"]
                 safe_title = title.replace('"', "'")
+                fm_title = _yaml_str(title)
                 digest = _summarize(txt, args.bridge) if args.summarize else None
                 section = f"## Digest\n\n{digest}\n\n## Transcript\n\n" if digest else ""
                 # Recycled/re-premiered stream check (scan digest+transcript,
@@ -361,9 +598,9 @@ def main() -> None:
                 )
                 body = (
                     f"---\n"
-                    f"title: {safe_title}\n"
+                    f"title: {fm_title}\n"
                     f"source: youtube\n"
-                    f"channel: {handle}\n"
+                    f"channel: {_yaml_str(handle)}\n"
                     f"channel_id: {cid}\n"
                     f"video_id: {v['id']}\n"
                     f"url: https://youtu.be/{v['id']}\n"
@@ -387,6 +624,7 @@ def main() -> None:
 
     seen_path.parent.mkdir(parents=True, exist_ok=True)
     seen_path.write_text(json.dumps(seen, indent=2))
+    _save_cookies()
     print(f"pages written: {written}")
 
 
