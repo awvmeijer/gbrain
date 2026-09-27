@@ -127,30 +127,38 @@ def _coverage_footer(total: int, dropped: list[str], ledger_date: str) -> str:
     return "\n".join(lines)
 
 
-FORGE_HEARTBEAT = Path.home() / ".forge2" / "heartbeat.json"
+# forge2 retired 2026-09-21; the live product is forge3 (Straat), whose
+# scheduler writes ~/.forge3/heartbeat.json every 10 minutes
+# (forge3/agents/scheduler.py write_heartbeat). Keys: product, ts, scheduler,
+# agents, and from the 10-minute job ready + failing.
+FORGE_HEARTBEAT = Path.home() / ".forge3" / "heartbeat.json"
 FORGE_DARK_DAYS = 3  # three consecutive dark days is an incident, not a pause
 
 
 def _forge_heartbeat_line() -> str:
-    """Forge liveness in the daily digest (Forge execution plan §4B): the
-    substrate writes ~/.forge2/heartbeat.json every 10 minutes; this line is
-    the operator's earliest warning that Forge went dark."""
+    """Straat liveness in the daily digest: the operator's earliest warning
+    that Forge went dark or that its readiness checks are failing."""
     try:
         beat = json.loads(FORGE_HEARTBEAT.read_text())
         ts = datetime.fromisoformat(beat["ts"])
         age = datetime.now(timezone.utc) - ts
-        last = beat.get("last_agent_run") or {}
-        ran = (f", last agent run: {last.get('agent')} ({last.get('status')})"
-               if last else "")
+        stamp = ts.isoformat(timespec="minutes")
         if age > timedelta(days=FORGE_DARK_DAYS):
-            return (f"INCIDENT: FORGE DARK — last heartbeat "
-                    f"{ts.isoformat(timespec='minutes')} ({age.days}d ago){ran}")
-        return (f"Forge: last ran {ts.isoformat(timespec='minutes')} "
-                f"({beat.get('events_total', '?')} events{ran})")
+            return (f"INCIDENT: FORGE DARK — last Straat heartbeat "
+                    f"{stamp} ({age.days}d ago)")
+        parts = [f"{beat.get('agents', '?')} agents"]
+        if beat.get("scheduler") != "on":
+            parts.append(f"scheduler {beat.get('scheduler', '?')}")
+        failing = beat.get("failing") or []
+        if failing:
+            parts.append("failing: " + ", ".join(map(str, failing)))
+        elif "ready" in beat:
+            parts.append("ready" if beat["ready"] == "ok" else f"ready={beat['ready']}")
+        return f"Straat: last beat {stamp} ({', '.join(parts)})"
     except FileNotFoundError:
-        return "INCIDENT: FORGE DARK — no heartbeat file has ever been written"
-    except (ValueError, KeyError) as exc:
-        return f"WARNING: Forge heartbeat unreadable ({exc!r})"
+        return "INCIDENT: FORGE DARK — no Straat heartbeat file has ever been written"
+    except (ValueError, KeyError, TypeError) as exc:
+        return f"WARNING: Straat heartbeat unreadable ({exc!r})"
 
 
 def gather(ing: Path, days: int) -> tuple[list[tuple[str, str]], list[str]]:
