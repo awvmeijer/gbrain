@@ -18,6 +18,8 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import json
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -60,9 +62,15 @@ def main() -> None:
             continue
         ts = datetime.fromtimestamp(p.stat().st_mtime, tz=timezone.utc)
         first = content.splitlines()[0][:60]
+        # JSON-quote the title (valid YAML double-quoted scalar): a raw first
+        # line containing ": " broke the gbrain import's frontmatter parse.
+        fm_title = json.dumps(
+            re.sub(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]", "", f"Capture — {first} ({ts:%Y-%m-%d})"),
+            ensure_ascii=False,
+        )
         page = (
             f"---\n"
-            f"title: Capture — {first} ({ts:%Y-%m-%d})\n"
+            f"title: {fm_title}\n"
             f"source: capture\n"
             f"date: {ts:%Y-%m-%d}\n"
             f"captured_at: {ts:%Y-%m-%dT%H:%M:%SZ}\n"

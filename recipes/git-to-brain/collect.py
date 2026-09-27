@@ -120,9 +120,12 @@ def _write_page(out_root: Path, repo: dict, day: str, entries: list[dict]) -> No
         if e["files"]:
             line += f" ({e['files']} files, +{e['ins']}/-{e['dels']})"
         lines.append(line)
+    # `slug:` is gbrain's reserved page-slug key: the importer rejects any value
+    # that differs from the path-derived slug (git/<repo>/<day>), so the repo
+    # short name must live under a different key.
     body = (
         f"---\ntitle: Git {repo['slug']} — {day}\nsource: git\nrepo: \"{repo['canonical']}\"\n"
-        f"slug: {repo['slug']}\ndate: {day}\ntags: [git, commits, {repo['slug']}]\n---\n\n"
+        f"repo_slug: {repo['slug']}\ndate: {day}\ntags: [git, commits, {repo['slug']}]\n---\n\n"
         f"# Git {repo['slug']} — {day}\n\n" + "\n".join(lines) + "\n"
     )
     p = out_root / "git" / repo["slug"] / f"{day}.md"
