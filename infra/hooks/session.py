@@ -65,10 +65,17 @@ def _http(method: str, path: str, body: dict | None = None):
 
 def _parse_transcript(path: str, cwd: str):
     title, files = "session", []
+    # Did we actually READ any transcript content? A zero-turn or never-flushed
+    # session leaves transcript_path pointing at a file that does not exist;
+    # the read below then throws, the bare `except` swallows it, and we used to
+    # POST a titleless stub anyway (86% of session pages). Callers use this flag
+    # to skip the write entirely instead of minting a stub.
+    transcript_ok = False
     try:
         first = True
         with open(path) as f:
             for line in f:
+                transcript_ok = True
                 try:
                     ev = json.loads(line)
                 except Exception:
@@ -96,7 +103,7 @@ def _parse_transcript(path: str, cwd: str):
         commits = [l for l in r.stdout.splitlines() if l.strip()]
     except Exception:
         pass
-    return title, files[:40], commits
+    return title, files[:40], commits, transcript_ok
 
 
 def main() -> None:
@@ -121,7 +128,14 @@ def main() -> None:
             if ctx:
                 print(json.dumps({"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": ctx}}))
         else:
-            title, files, commits = _parse_transcript(inp.get("transcript_path", ""), cwd)
+            title, files, commits, transcript_ok = _parse_transcript(
+                inp.get("transcript_path", ""), cwd)
+            if not transcript_ok:
+                # Nothing was read — zero-turn session, or the transcript was
+                # never flushed to disk. Recording it would add a stub whose
+                # only content is `git log`, which /api/context then reads back
+                # at SessionStart as a page titled "session".
+                return
             _http("POST", "/api/session-record", {"repo": repo, "title": title, "files": files,
                                                   "commits": commits, "session_id": inp.get("session_id", "")})
     except Exception:
