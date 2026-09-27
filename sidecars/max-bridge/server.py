@@ -68,6 +68,30 @@ def _resolve_model(m: str | None) -> str:
     return _MODEL_MAP.get(m, m)
 
 
+def _usage_to_openai(usage: dict | None) -> dict:
+    """Map the SDK's Anthropic-shaped usage into an OpenAI-shaped usage block.
+
+    Cache tokens are folded into `prompt_tokens` (OpenAI's schema has no
+    separate cache dimension) so a cache-heavy call doesn't silently vanish
+    from GBrain's usage ledger. `prompt_tokens_details.cached_tokens` is
+    included best-effort in OpenAI's own cache-hit convention, in case the
+    AI SDK's openai-compatible provider surfaces it — not guaranteed.
+    """
+    if not usage:
+        return {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+    input_tokens = usage.get("input_tokens", 0) or 0
+    cache_read = usage.get("cache_read_input_tokens", 0) or 0
+    cache_creation = usage.get("cache_creation_input_tokens", 0) or 0
+    output_tokens = usage.get("output_tokens", 0) or 0
+    prompt_tokens = input_tokens + cache_read + cache_creation
+    return {
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": output_tokens,
+        "total_tokens": prompt_tokens + output_tokens,
+        "prompt_tokens_details": {"cached_tokens": cache_read},
+    }
+
+
 def _text_of(content) -> str:
     """OpenAI content may be a string or a list of {type,text} blocks."""
     if isinstance(content, str):
@@ -211,8 +235,7 @@ async def chat_completions(req: Request):
                     "finish_reason": "stop",
                 }
             ],
-            # The SDK gives no real token counts; report zeros (best-effort).
-            "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+            "usage": _usage_to_openai(result.usage),
         }
 
     async def event_stream():
@@ -225,6 +248,7 @@ async def chat_completions(req: Request):
             "choices": [{"index": 0, "delta": {"role": "assistant"}, "finish_reason": None}],
         }
         yield f"data: {json.dumps(first)}\n\n"
+        usage: dict | None = None
         try:
             async with _SEM:
                 async for ev in claude.stream(prompt, model=model, system=system):
@@ -239,6 +263,8 @@ async def chat_completions(req: Request):
                             ],
                         }
                         yield f"data: {json.dumps(chunk)}\n\n"
+                    elif ev.get("type") == "done":
+                        usage = ev.get("usage")
         except Exception as e:  # noqa: BLE001 — surface as an OpenAI-shaped error frame
             yield f"data: {json.dumps({'error': {'message': str(e)[:300], 'type': 'max_bridge_error'}})}\n\n"
         final = {
@@ -247,7 +273,7 @@ async def chat_completions(req: Request):
             "created": created,
             "model": sent_model or model,
             "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
-            "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+            "usage": _usage_to_openai(usage),
         }
         yield f"data: {json.dumps(final)}\n\n"
         yield "data: [DONE]\n\n"

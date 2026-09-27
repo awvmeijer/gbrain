@@ -39,6 +39,8 @@ def _exit_internal(prev: str | None) -> None:
 class ClaudeResult:
     text: str
     session_id: str | None
+    usage: dict[str, Any] | None = None
+    total_cost_usd: float | None = None
 
 
 # A logged-out CLI emits this as assistant TEXT (exit 0), not only as an
@@ -66,6 +68,8 @@ async def _collect(
 
     text_parts: list[str] = []
     session_id: str | None = None
+    usage: dict[str, Any] | None = None
+    total_cost_usd: float | None = None
 
     try:
         async for msg in query(prompt=prompt, options=opts):
@@ -81,6 +85,8 @@ async def _collect(
                             text_parts.append(t)
             elif name in ("ResultMessage", "Result"):
                 session_id = getattr(msg, "session_id", None) or session_id
+                usage = getattr(msg, "usage", None) or usage
+                total_cost_usd = getattr(msg, "total_cost_usd", None) or total_cost_usd
     except Exception:
         # The CLI reports API-side failures (429/529 overload) as an
         # error-flagged result AFTER any assistant text has streamed ("Claude
@@ -93,7 +99,7 @@ async def _collect(
     if _auth_failed(text):
         # Never hand the logged-out notice to callers as a "completion".
         raise RuntimeError("claude CLI not logged in — run `claude` then /login")
-    return ClaudeResult(text=text, session_id=session_id)
+    return ClaudeResult(text=text, session_id=session_id, usage=usage, total_cost_usd=total_cost_usd)
 
 
 def complete(
@@ -203,6 +209,8 @@ async def stream(
     prev = _enter_internal()
     try:
         session_id: str | None = None
+        usage: dict[str, Any] | None = None
+        total_cost_usd: float | None = None
         async for msg in query(prompt=prompt, options=opts):
             name = type(msg).__name__
             if name == "StreamEvent":
@@ -215,7 +223,15 @@ async def stream(
                             yield {"type": "delta", "text": text}
             elif name in ("ResultMessage", "Result"):
                 session_id = getattr(msg, "session_id", None) or session_id
+                usage = getattr(msg, "usage", None) or usage
+                total_cost_usd = getattr(msg, "total_cost_usd", None) or total_cost_usd
 
-        yield {"type": "done", "session_id": session_id, "model": model}
+        yield {
+            "type": "done",
+            "session_id": session_id,
+            "model": model,
+            "usage": usage,
+            "total_cost_usd": total_cost_usd,
+        }
     finally:
         _exit_internal(prev)
