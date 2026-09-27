@@ -1251,16 +1251,24 @@ async def api_session_record(request: Request, x_brain_key: str | None = Header(
     files = [str(f) for f in (d.get("files") or [])][:40]
     commits = [str(c) for c in (d.get("commits") or [])][:20]
     sid = str(d.get("session_id") or "")
+    day = datetime.now().strftime("%Y-%m-%d")
     body = [
         "---", "type: session", f'title: "{title}"', "source: claude-code",
-        f"repo: {repo}", f"session_id: {sid}", f"date: {datetime.now().strftime('%Y-%m-%d')}",
+        f"repo: {repo}", f"session_id: {sid}", f"date: {day}",
         "tags: [session, claude-code]", "---", "", f"# Session — {title}", "", f"**Repo:** {repo}", "",
     ]
     if files:
         body += ["## Files touched"] + [f"- `{f}`" for f in files] + [""]
     if commits:
         body += ["## Commits this session"] + [f"- {c}" for c in commits] + [""]
-    fslug = f"sessions/{slug}/{ts}"
+    # Idempotency key. The slug used to be datetime.now(), so every SessionEnd
+    # fire for the same session minted a brand-new page — one long-lived session
+    # accumulated 23 of them, and identical bodies (same repo, no new commit)
+    # became the duplicate-content groups `gbrain doctor` reports. Keying on
+    # (day, session_id) makes a re-fire overwrite its own page. Sessions resumed
+    # across days still get one page per day, which is the real unit of work.
+    sid_key = re.sub(r"[^a-z0-9]", "", sid.lower())[:8]
+    fslug = f"sessions/{slug}/{day}-{sid_key}" if sid_key else f"sessions/{slug}/{ts}"
     _gbrain(["put", fslug, "--content", "\n".join(body)])
     return {"ok": True, "slug": fslug}
 
