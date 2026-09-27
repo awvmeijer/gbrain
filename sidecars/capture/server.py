@@ -455,7 +455,22 @@ def _svc(url: str) -> bool:
         return False
 
 
-FEED_MAX_AGE_H = {"discord": 30, "x": 30, "youtube": 48, "telegram": 30, "digests": 30}
+FEED_MAX_AGE_H = {"discord": 30, "x": 30, "youtube": 48, "telegram": 30,
+                  "rss": 30, "digests": 30}
+
+# Sources where silence is an INCIDENT, vs. sources where quiet is just quiet.
+# Precedent: feeds-cron.sh keeps the Obsidian vault out of the freshness set
+# because "a quiet vault is normal, not stale". Discord is the same shape — the
+# bot sees one low-traffic channel (its own digest channel is excluded to avoid
+# a feedback loop), so months of silence there is not a failure. Everything else
+# here publishes daily, so silence means a dead collector, not a slow news day.
+# Non-daily sources still report age; they just never trip the verdict.
+FEED_EXPECT_DAILY = {"x", "youtube", "telegram", "rss", "digests"}
+
+# Pages scanned per source when dating a feed (newest by mtime first). Reading
+# every page costs far more than stat(); a source whose newest N files are all
+# old is stale by any definition.
+FEED_SCAN_FILES = 200
 
 APPROVALS_ENV = HOME / ".gbrain" / "telegram_approvals.env"
 
@@ -487,11 +502,36 @@ def _postgres_ok() -> bool:
 
 
 def _newest_age_h(subdir: str) -> float | None:
+    """Age of the freshest CONTENT in a feed dir, from its frontmatter `date:`.
+
+    2026-09-21: this used max(st_mtime), which any collector that rewrites
+    unchanged files pins to "now" forever. The discord recipe rewrote the same
+    April-June pages every night, so the feed reported 17h fresh off month-old
+    content — while x sat 761h dark and youtube 185h. mtime measures the
+    collector RUNNING, not the feed DELIVERING; only the content date does that.
+    Falls back to mtime when no page in the scan window carries a date.
+    """
     d = ING / subdir
-    files = list(d.rglob("*.md")) if d.exists() else []
+    if not d.exists():
+        return None
+    files = list(d.rglob("*.md"))
     if not files:
         return None
-    return (time.time() - max(f.stat().st_mtime for f in files)) / 3600.0
+    files.sort(key=lambda f: f.stat().st_mtime, reverse=True)
+    window = files[:FEED_SCAN_FILES]
+    newest: float | None = None
+    for f in window:
+        try:
+            day = _field(f.read_text(errors="ignore"), "date")[:10]
+            # End-of-day: a page dated today is 0h old, not up-to-24h old.
+            ts = datetime.strptime(day, "%Y-%m-%d").timestamp() + 86399
+        except (OSError, ValueError):
+            continue
+        if newest is None or ts > newest:
+            newest = ts
+    if newest is None:  # undated corpus (or unreadable) — mtime is all we have
+        newest = max(f.stat().st_mtime for f in window)
+    return max(0.0, (time.time() - newest) / 3600.0)
 
 
 def _field(content: str, key: str) -> str:
@@ -540,10 +580,11 @@ def api_health(x_brain_key: str | None = Header(default=None)):
     feeds, stale = [], False
     for src, maxh in FEED_MAX_AGE_H.items():
         age = _newest_age_h(src)
-        is_stale = age is not None and age > maxh
+        daily = src in FEED_EXPECT_DAILY
+        is_stale = daily and age is not None and age > maxh
         stale = stale or is_stale
         feeds.append({"source": src, "age_hours": round(age, 1) if age is not None else None,
-                      "stale": is_stale})
+                      "stale": is_stale, "expect_daily": daily})
     down = not all(services.values())
     return {"verdict": "down" if down else ("warn" if stale else "ok"),
             "services": services, "feeds": feeds, "engine": engine}

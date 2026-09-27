@@ -34,6 +34,16 @@ import httpx
 
 # Priority order: densest signal first; rss last (context budget may trim it).
 SOURCES = ["telegram", "youtube", "x", "discord", "rss"]
+
+# Feeds that publish daily: silence past this many days means a DEAD COLLECTOR,
+# not a quiet market. Mirrors FEED_EXPECT_DAILY in sidecars/capture/server.py.
+# `discord` is deliberately absent — the bot sees one low-traffic channel (its
+# own digest channel is excluded to avoid a feedback loop), so quiet is normal.
+# 2026-09-21: x had been dark 30 days and youtube 7 before anyone noticed, because
+# the digest reported "no X posts present for this period" in exactly the same
+# words it would use for a slow news day. A dark collector must never read like
+# a quiet market.
+DARK_AFTER_DAYS = {"x": 2, "youtube": 3, "telegram": 2, "rss": 2}
 EXCLUDE_NOTE = "stale_content: true"  # recycled/re-premiered YouTube streams
 PER_FILE_CAP = 4_000
 # Keep total near the empirically-safe max-bridge payload (~60KB transcripts
@@ -46,6 +56,7 @@ sources for {window} (X/fintwit feed, finance YouTube creators, Telegram
 scanner channels, Discord, finance RSS). This is the full corpus — do not
 claim data is missing if it appears below; equally, do not invent data that
 is not below.
+{feed_health}
 
 Write the daily digest:
 - Group by theme; name every ticker with the source's direction
@@ -59,7 +70,11 @@ Write the daily digest:
 - Attribute every line to its source as [<relative-path>].
 - Do NOT treat mention volume as a buy/sell signal.
 - If a section genuinely has no supporting data in the corpus, say so in one
-  line — never speculate."""
+  line — never speculate.
+- Any source flagged DARK above is a BROKEN INGESTION PIPELINE, not an absence
+  of market activity. Attribute it to the outage ("X: none — collector dark
+  32d"), never to a quiet market, and never imply the corpus is complete
+  without it."""
 
 
 def _fm_date(text: str) -> str:
@@ -161,10 +176,17 @@ def _forge_heartbeat_line() -> str:
         return f"WARNING: Straat heartbeat unreadable ({exc!r})"
 
 
-def gather(ing: Path, days: int) -> tuple[list[tuple[str, str]], list[str]]:
+def gather(ing: Path, days: int) -> tuple[list[tuple[str, str]], list[str], dict[str, str]]:
     cutoff = (date.today() - timedelta(days=days)).isoformat()
     blocks: list[tuple[str, str]] = []
     skipped: list[str] = []
+    # Newest content date seen per source. Free to collect here — this walk
+    # already reads and dates every page — and it is what separates a dark
+    # collector from a quiet one. Deliberately NOT read from the capture
+    # sidecar's /api/health: the digest must still be able to report that feeds
+    # are down when the sidecar itself is down. Depending on the thing you are
+    # monitoring is how the 30-day X outage stayed invisible.
+    newest: dict[str, str] = {}
     for src in SOURCES:
         root = ing / src
         if not root.is_dir():
@@ -175,6 +197,8 @@ def gather(ing: Path, days: int) -> tuple[list[tuple[str, str]], list[str]]:
             except OSError:
                 continue
             d = _fm_date(text)
+            if d and d > newest.get(src, ""):
+                newest[src] = d
             if not d or d < cutoff:
                 continue
             rel = str(p.relative_to(ing)).removesuffix(".md")
@@ -185,7 +209,29 @@ def gather(ing: Path, days: int) -> tuple[list[tuple[str, str]], list[str]]:
             if len(content) > PER_FILE_CAP:
                 content = content[:PER_FILE_CAP] + "\n[truncated]"
             blocks.append((rel, content))
-    return blocks, skipped
+    return blocks, skipped, newest
+
+
+def dark_feeds(newest: dict[str, str]) -> list[tuple[str, int | None]]:
+    """Daily-publishing sources with no page inside their tolerance.
+
+    Returns (source, days_silent); days_silent is None when the source has
+    never produced a dated page at all.
+    """
+    today = date.today()
+    out: list[tuple[str, int | None]] = []
+    for src, limit in DARK_AFTER_DAYS.items():
+        seen = newest.get(src)
+        if not seen:
+            out.append((src, None))
+            continue
+        try:
+            age = (today - date.fromisoformat(seen)).days
+        except ValueError:
+            continue
+        if age > limit:
+            out.append((src, age))
+    return sorted(out, key=lambda t: (-1 if t[1] is None else -t[1]))
 
 
 COMPUTE_SUMMARY = Path.home() / "brains-console" / "sampler" / "summarize.py"
@@ -207,6 +253,15 @@ def _compute_block() -> str:
     return r.stdout.strip()
 
 
+def dark_banner(dark: list[tuple[str, int | None]]) -> str:
+    if not dark:
+        return ""
+    parts = [f"{s}: {'no data ever' if d is None else f'{d}d silent'}" for s, d in dark]
+    return ("⚠ **STALE FEEDS — ingestion is broken, not the market:** "
+            + " · ".join(parts)
+            + "\nThese sources contributed NOTHING to the digest below.\n")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("ingest_dir")
@@ -219,7 +274,8 @@ def main() -> int:
     args = ap.parse_args()
 
     ing = Path(args.ingest_dir).expanduser()
-    blocks, skipped = gather(ing, args.days)
+    blocks, skipped, newest = gather(ing, args.days)
+    dark = dark_feeds(newest)
     if not blocks:
         print("no in-window source pages found", file=sys.stderr)
         return 1
@@ -235,7 +291,13 @@ def main() -> int:
         ctx.append(piece)
         used += len(piece)
 
-    user_msg = ANALYST_PROMPT.format(window=window) + "".join(ctx)
+    feed_health = ""
+    if dark:
+        feed_health = ("\nFEED HEALTH — these sources are DARK (collector broken, "
+                       "zero pages ingested): "
+                       + ", ".join(f"{s} ({'never' if d is None else f'{d}d'})" for s, d in dark)
+                       + ".\n")
+    user_msg = ANALYST_PROMPT.format(window=window, feed_health=feed_health) + "".join(ctx)
     sc_block, ledger_date = _scorecard_block(ing)
     user_msg += sc_block  # creator-scorecard: weight by track record
     if dropped:
@@ -246,9 +308,12 @@ def main() -> int:
         )
 
     footer = _coverage_footer(len(blocks), dropped, ledger_date)
+    banner = dark_banner(dark)
     if args.dry_run:
         print(f"dry-run: {len(blocks) - len(dropped)} pages, {used // 1000}KB context, "
               f"prompt {len(user_msg) // 1000}KB — bridge call skipped", file=sys.stderr)
+        if banner:
+            print(banner)
         print(_compute_block())
         print(footer)
         return 0
@@ -270,6 +335,8 @@ def main() -> int:
         return 1
     print(f"context: {len(blocks) - len(dropped)} pages, {used // 1000}KB "
           f"(+{len(dropped)} dropped, {len(skipped)} stale-excluded)", file=sys.stderr)
+    if banner:
+        print(banner)
     print(out)
     print("\n---\n" + _compute_block() + "\n\n" + footer)
     return 0
