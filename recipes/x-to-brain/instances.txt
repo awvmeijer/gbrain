@@ -1,0 +1,16 @@
+# Nitter instances tried in order until one returns a parseable RSS feed.
+# Volunteer-run and mortal: when X ingestion goes stale (the daily digest now
+# says so in its header within ~2 days), check https://status.d420.de/ and
+# replace these. Lines are hostnames or full URLs; # comments allowed.
+#
+# Verified serving real RSS 2026-09-21:
+shitter.thepixora.com
+
+# Intermittent 2026-09-21 — returned 20 items, then 0 minutes later. Kept as
+# failover only; do not promote above thepixora without retesting.
+nitter.jaydenha.uk
+
+# Dead 2026-09-21, kept as history so they are not re-added by mistake:
+#   nitter.net, nitter.poast.org, nitter.privacydev.net  -> connection refused
+#   nitter.meowing.monster, nitter.netbub.com            -> anti-bot challenge
+#   nitter.click (403), nitter.xitter.cc (404), xcancel.com (451)

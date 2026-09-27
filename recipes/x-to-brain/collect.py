@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import sys
 import time
@@ -29,8 +30,35 @@ from pathlib import Path
 import httpx
 
 UA = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120 Safari/537.36"}
-INSTANCES = ["https://nitter.net", "https://nitter.poast.org", "https://nitter.privacydev.net"]
 HERE = Path(__file__).parent
+
+# Nitter instances, newest-known-good first. 2026-08-21: the three hardcoded
+# here (nitter.net, nitter.poast.org, nitter.privacydev.net) all died within a
+# day of each other and X ingestion was dark for 30 nights before anyone noticed
+# — the list being CODE meant the fix needed an edit here, and nothing was
+# watching. It is now a data file: when an instance dies, edit instances.txt.
+# Public Nitter is volunteer-run and mortal; assume every entry is temporary.
+DEFAULT_INSTANCES = ["https://shitter.thepixora.com"]
+
+
+def _instances() -> list[str]:
+    """Instance list: $X_NITTER_INSTANCES (comma-sep) > instances.txt > default."""
+    env = os.environ.get("X_NITTER_INSTANCES", "").strip()
+    if env:
+        return [u.strip().rstrip("/") for u in env.split(",") if u.strip()]
+    f = HERE / "instances.txt"
+    if f.is_file():
+        out = []
+        for line in f.read_text().splitlines():
+            s = line.split("#", 1)[0].strip().rstrip("/")
+            if s:
+                out.append(s if "://" in s else f"https://{s}")
+        if out:
+            return out
+    return DEFAULT_INSTANCES
+
+
+INSTANCES = _instances()
 
 
 def _handles() -> list[str]:
