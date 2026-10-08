@@ -138,7 +138,7 @@ def _coverage_footer(total: int, dropped: list[str], ledger_date: str) -> str:
                          "stale; rerun recipes/creator-scorecard")
     else:
         lines.append("No scorecard ledger found — source calls are unweighted")
-    lines.append(_forge_heartbeat_line())
+    lines.extend([_forge_heartbeat_line(), *_forge_digest_lines()])
     return "\n".join(lines)
 
 
@@ -174,6 +174,29 @@ def _forge_heartbeat_line() -> str:
         return "INCIDENT: FORGE DARK — no Straat heartbeat file has ever been written"
     except (ValueError, KeyError, TypeError) as exc:
         return f"WARNING: Straat heartbeat unreadable ({exc!r})"
+
+
+# Straat's evening digest (forge3/agents/digest_daily, digest-v1): at most twelve
+# lines, written beside the heartbeat at 23:15 UTC. Keys: rule, date, lines, counts.
+FORGE_DIGEST = Path.home() / ".forge3" / "digest.json"
+FORGE_DIGEST_STALE_DAYS = 2
+
+
+def _forge_digest_lines() -> list[str]:
+    """The desk's day: breakers touched, state changes, binary events, latency."""
+    try:
+        d = json.loads(FORGE_DIGEST.read_text())
+        age = (date.today() - date.fromisoformat(d["date"])).days
+        if age > FORGE_DIGEST_STALE_DAYS:
+            return [f"WARNING: Straat digest is {age} days old ({d['date']})"]
+        lines = [str(x) for x in d.get("lines") or []][:12]
+        if not lines:
+            return [f"Straat digest {d['date']}: nothing moved"]
+        return [f"Straat digest {d['date']}:"] + [f"- {x}" for x in lines]
+    except FileNotFoundError:
+        return ["Straat digest: none written yet (digest_daily runs at 23:15 UTC)"]
+    except (ValueError, KeyError, TypeError) as exc:
+        return [f"WARNING: Straat digest unreadable ({exc!r})"]
 
 
 def gather(ing: Path, days: int) -> tuple[list[tuple[str, str]], list[str], dict[str, str]]:
