@@ -12,7 +12,12 @@ trade signal — this is signal/context capture, not a buy/sell trigger.
 State: per-handle seen tweet-link set in <out>/x/.seen.json.
 
 Usage:
-    .venv/bin/python collect.py <output_dir> [--per-handle-sleep 1.5] [--max 30]
+    .venv/bin/python collect.py <output_dir> [--per-handle-sleep 1.5] [--max 30] [--heal]
+
+--heal (used by feeds-cron): probe + rewrite instances.txt first (see
+heal_instances.py), re-probe and retry unreachable handles once if coverage is
+under --retry-below, and lift the per-handle cap after an outage (backfill).
+Run state for the feeds watchdog: ~/gbrain/logs/x-collect-state.json.
 """
 
 from __future__ import annotations
@@ -24,10 +29,13 @@ import re
 import sys
 import time
 from collections import defaultdict
+from datetime import datetime
 from email.utils import parsedate_to_datetime
 from pathlib import Path
 
 import httpx
+
+sys.path.insert(0, str(Path(__file__).parent))  # heal_instances sibling
 
 UA = {"User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/120 Safari/537.36"}
 HERE = Path(__file__).parent
@@ -107,52 +115,142 @@ def _parse_items(rss: str) -> list[dict]:
     return items
 
 
+LOGS = HERE.parent.parent / "logs"
+RUN_STATE = LOGS / "x-collect-state.json"
+
+
+def _write_day(out_root: Path, handle: str, day: str, tweets: list[dict]) -> bool:
+    """Write/merge one handle-day page. Merges into an existing page: the seen-set
+    already filters repeats, so overwriting (the old behaviour) silently dropped
+    that day's earlier tweets whenever a second run that day found new ones."""
+    lines = [f"- **{t['hm']}** {t['text']}" + (f"  ({t['link']})" if t["link"] else "") for t in tweets]
+    p = out_root / "x" / handle.lower() / f"{day}.md"
+    if p.exists():
+        existing = p.read_text()
+        fresh = [ln for ln in lines if ln not in existing]
+        if not fresh:
+            return False
+        p.write_text(existing.rstrip("\n") + "\n" + "\n".join(fresh) + "\n")
+        return True
+    body = (
+        f"---\ntitle: X @{handle} — {day}\nsource: x\nhandle: {handle}\n"
+        f"date: {day}\ntags: [x, twitter, finance, {handle.lower()}]\n---\n\n"
+        f"# X @{handle} — {day}\n\n" + "\n".join(lines) + "\n"
+    )
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(body)
+    return True
+
+
+def _collect(client: httpx.Client, handles: list[str], seen: dict, out_root: Path,
+             cap: int, sleep: float) -> tuple[int, list[str], set[str]]:
+    """Fetch + write each handle. Returns (pages written, unreachable, days written)."""
+    written, dead, days = 0, [], set()
+    for handle in handles:
+        rss = _fetch_rss(client, handle)
+        if not rss:
+            dead.append(handle)
+            time.sleep(sleep)
+            continue
+        items = _parse_items(rss)[:cap]
+        seen_links = set(seen.get(handle, []))
+        by_day: dict[str, list[dict]] = defaultdict(list)
+        for it in items:
+            if it["link"] and it["link"] in seen_links:
+                continue
+            by_day[it["day"] or "undated"].append(it)
+            if it["link"]:
+                seen_links.add(it["link"])
+        for day, tweets in by_day.items():
+            if _write_day(out_root, handle, day, tweets):
+                written += 1
+                days.add(day)
+        seen[handle] = sorted(seen_links)
+        time.sleep(sleep)
+    return written, dead, days
+
+
+def _heal(force_status: bool = True) -> str:
+    """Probe + rewrite instances.txt, then reload INSTANCES. Never raises."""
+    global INSTANCES
+    try:
+        import heal_instances
+        s = heal_instances.heal(use_status=force_status)
+        INSTANCES = _instances()
+        return heal_instances.one_line(s)
+    except Exception as e:  # noqa: BLE001 — healing must never block collection
+        return f"x-instances: heal failed ({type(e).__name__}: {e})"
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("output_dir")
     ap.add_argument("--per-handle-sleep", type=float, default=1.5)
     ap.add_argument("--max", type=int, default=30, help="max tweets/handle to keep")
+    ap.add_argument("--heal", action="store_true",
+                    help="probe + rewrite instances.txt before collecting, and re-probe"
+                         " + retry unreachable handles once if coverage is low")
+    ap.add_argument("--retry-below", type=float, default=0.5,
+                    help="with --heal: re-probe + retry when handles-ok ratio is below this")
     args = ap.parse_args()
 
     out_root = Path(args.output_dir)
     seen_path = out_root / "x" / ".seen.json"
     seen = json.loads(seen_path.read_text()) if seen_path.exists() else {}
+    try:
+        state = json.loads(RUN_STATE.read_text())
+    except (OSError, ValueError):
+        state = {}
+
+    notes = []
+    if args.heal:
+        notes.append(_heal())
+
+    # Backfill on recovery: Nitter RSS serves only the newest ~20 tweets per
+    # handle (no paging), so after an outage the reachable window is whatever
+    # those items span. Lift the per-handle cap so nothing inside it is dropped.
+    today = datetime.now().strftime("%Y-%m-%d")
+    last_ok = state.get("last_success_day", "")
+    cap = args.max
+    gap_days = 0
+    if last_ok:
+        gap_days = (datetime.fromisoformat(today) - datetime.fromisoformat(last_ok)).days
+        if gap_days > 1:
+            cap = max(cap, 200)
+            notes.append(f"recovery: last good X day {last_ok} ({gap_days}d ago) — per-handle cap lifted")
 
     handles = _handles()
-    written, ok_handles, dead = 0, 0, []
     with httpx.Client() as client:
-        for handle in handles:
-            rss = _fetch_rss(client, handle)
-            if not rss:
-                dead.append(handle)
-                time.sleep(args.per_handle_sleep)
-                continue
-            ok_handles += 1
-            items = _parse_items(rss)[: args.max]
-            seen_links = set(seen.get(handle, []))
-            by_day: dict[str, list[dict]] = defaultdict(list)
-            for it in items:
-                if it["link"] and it["link"] in seen_links:
-                    continue
-                by_day[it["day"] or "undated"].append(it)
-                if it["link"]:
-                    seen_links.add(it["link"])
-            for day, tweets in by_day.items():
-                lines = [f"- **{t['hm']}** {t['text']}" + (f"  ({t['link']})" if t["link"] else "") for t in tweets]
-                body = (
-                    f"---\ntitle: X @{handle} — {day}\nsource: x\nhandle: {handle}\n"
-                    f"date: {day}\ntags: [x, twitter, finance, {handle.lower()}]\n---\n\n"
-                    f"# X @{handle} — {day}\n\n" + "\n".join(lines) + "\n"
-                )
-                p = out_root / "x" / handle.lower() / f"{day}.md"
-                p.parent.mkdir(parents=True, exist_ok=True)
-                p.write_text(body)
-                written += 1
-            seen[handle] = sorted(seen_links)
-            time.sleep(args.per_handle_sleep)
+        written, dead, days = _collect(client, handles, seen, out_root, cap, args.per_handle_sleep)
+        ratio = (len(handles) - len(dead)) / max(len(handles), 1)
+        if args.heal and dead and ratio < args.retry_below:
+            notes.append(f"low coverage {len(handles) - len(dead)}/{len(handles)} — re-probing")
+            notes.append(_heal())
+            w2, dead, d2 = _collect(client, dead, seen, out_root, cap, args.per_handle_sleep)
+            written += w2
+            days |= d2
+            notes.append(f"retry recovered {w2} page(s)")
 
     seen_path.parent.mkdir(parents=True, exist_ok=True)
     seen_path.write_text(json.dumps(seen, indent=2))
+    ok_handles = len(handles) - len(dead)
+    ratio = ok_handles / max(len(handles), 1)
+    # Days inside the outage window that this run filled (pinned years-old
+    # tweets also arrive undeduped on a fresh seen-set; they are not backfill).
+    backfilled = sorted(d for d in days if d != "undated" and last_ok <= d < today)
+    state.update({
+        "last_run": datetime.now().isoformat(timespec="seconds"),
+        "handles_ok": ok_handles, "handles_total": len(handles),
+        "pages_written": written, "unreachable": dead,
+        "backfilled_days": backfilled if gap_days > 1 else [],
+    })
+    if ratio >= args.retry_below:
+        state["last_success_day"] = today
+    LOGS.mkdir(parents=True, exist_ok=True)
+    RUN_STATE.write_text(json.dumps(state, indent=2))
+
+    for n in notes:
+        print(n)
     print(f"handles ok: {ok_handles}/{len(handles)} | pages written: {written} | unreachable: {len(dead)}")
     if dead:
         print("unreachable handles (no live instance returned a feed):", ", ".join(dead[:20]))

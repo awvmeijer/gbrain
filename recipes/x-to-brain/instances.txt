@@ -1,16 +1,15 @@
 # Nitter instances tried in order until one returns a parseable RSS feed.
-# Volunteer-run and mortal: when X ingestion goes stale (the daily digest now
-# says so in its header within ~2 days), check https://status.d420.de/ and
-# replace these. Lines are hostnames or full URLs; # comments allowed.
-#
-# Verified serving real RSS 2026-09-21:
-shitter.thepixora.com
+# AUTO-MANAGED by heal_instances.py (runs before every X collect): it probes
+# every instance here plus status.d420.de plus a fallback pool, and rewrites
+# this file as working -> untested -> dead. Every change is logged to
+# ~/gbrain/logs/x-instances.log. You can still edit by hand: add a host anywhere
+# and the next probe sorts it; block one for good with a `# never: <host>` line.
 
-# Intermittent 2026-09-21 — returned 20 items, then 0 minutes later. Kept as
-# failover only; do not promote above thepixora without retesting.
-nitter.jaydenha.uk
+# working (probed 2026-10-15 15:35)
+nitter.meowing.monster
+nitter.kareem.one
 
-# Dead 2026-09-21, kept as history so they are not re-added by mistake:
-#   nitter.net, nitter.poast.org, nitter.privacydev.net  -> connection refused
-#   nitter.meowing.monster, nitter.netbub.com            -> anti-bot challenge
-#   nitter.click (403), nitter.xitter.cc (404), xcancel.com (451)
+# dead at 2026-10-15 15:35 — kept as last-resort failover (some recover)
+shitter.thepixora.com  # HTTP 403
+nitter.jaydenha.uk  # ReadError
+nitter.netbub.com  # HTTP 418

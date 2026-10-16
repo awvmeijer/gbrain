@@ -28,7 +28,7 @@ $RUN "$YV" "$GB/recipes/youtube-to-brain/collect.py" "$ING" --limit 1 --summariz
 log "collect: youtube history drip (backfill)"
 $RUN "$YV" "$GB/recipes/youtube-to-brain/backfill.py" "$ING" --max-new 30 || log "  youtube backfill drip failed/timed out (will resume next night)"
 log "collect: x (fintwit)"
-$RUN "$BV" "$GB/recipes/x-to-brain/collect.py" "$ING" --per-handle-sleep 1.2 --max 25 || log "  x collect failed"
+$RUN "$BV" "$GB/recipes/x-to-brain/collect.py" "$ING" --per-handle-sleep 1.2 --max 25 --heal || log "  x collect failed"
 log "collect: rss (finance news)"
 $RUN "$BV" "$GB/recipes/rss-to-brain/collect.py" "$ING" --max 50 || log "  rss collect failed"
 log "collect: git (repo commits)"
@@ -71,6 +71,12 @@ log "import + embed"
 gbrain import "$ING" --no-embed || log "  import failed"
 gbrain embed --stale || log "  embed failed"
 
+log "feeds watchdog (self-heal: re-run remediation for any silent daily feed)"
+# infra/feeds-watchdog.py: health + X coverage -> one retry per unhealthy source,
+# re-import/embed only if pages landed, one-line summary in logs/selfheal/<day>.txt
+# (digest.py prints it). Never posts.
+$RUN "$BV" "$GB/infra/feeds-watchdog.py" || log "  watchdog: remediation failed for at least one feed (see logs/selfheal.log)"
+
 log "snapshot ingest corpus (git)"
 # ~/brains-ingest is a git repo (initialized 2026-08-15) — one commit per night
 # = corpus history for free. Local-only; must never fail the cron.
@@ -87,6 +93,15 @@ if [ -z "$DIGEST" ]; then
   log "  deterministic digest failed; falling back to gbrain think"
   SINCE="$(date -v-2d +%F 2>/dev/null || date +%F)"
   DIGEST="$(gbrain think "Across my fintwit X feed, finance YouTube creators, Telegram scanner channels, and Discord from the last day: group by theme; name every ticker with the source's direction (bullish/bearish/watch) + any level or catalyst; treat the Telegram scanner ticker lists as a SCREEN (no direction), and LEAD with OVERLAPS — a scanner-flagged ticker that an X/YouTube source also has a directional take on; then what changed (new calls, reversals, conviction shifts); call out where sources conflict, both sides attributed; attribute every line to a source. Do NOT treat mention volume as a buy/sell signal. (skill: fintwit-analyst)" --since "$SINCE" 2>/dev/null | "$BV" "$GB/infra/clean_digest.py")"
+fi
+
+# Empty-digest guard (2026-10-14 posted "_Nothing to report._" after one bridge 503).
+HOLLOW="$(printf '%s' "$DIGEST" | "$BV" "$GB/recipes/fintwit-analyst/digest.py" --check-hollow)"
+if [ -n "$DIGEST" ] && [ "$HOLLOW" != "ok" ]; then
+  log "  digest is hollow ($HOLLOW) — NOT posting; tomorrow's digest will say so"
+  mkdir -p "$GB/logs/selfheal"
+  echo "digest synthesis failed ($HOLLOW); bridge + think fallback both empty" > "$GB/logs/selfheal/digest-failed-$(date +%F).txt"
+  DIGEST=""
 fi
 
 if [ -n "$DIGEST" ]; then

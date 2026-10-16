@@ -285,7 +285,92 @@ def dark_banner(dark: list[tuple[str, int | None]]) -> str:
             + "\nThese sources contributed NOTHING to the digest below.\n")
 
 
+# 2026-10-14: one transient 503 from the Max bridge sent the run to the
+# `gbrain think` fallback, which returned nothing, and Discord got a digest that
+# said only "_Nothing to report._". Retry transient failures here first.
+BRIDGE_BACKOFF = (20, 60)  # seconds before attempts 2 and 3
+
+
+def synthesize(bridge: str, model: str, user_msg: str,
+               backoff: tuple[float, ...] = BRIDGE_BACKOFF,
+               sleep=None) -> tuple[str, str]:
+    """POST to the bridge, retrying 5xx / connection errors / hollow output.
+    4xx and read timeouts are not retried (one timeout is already 10 minutes).
+    Returns (digest, "") on success or ("", last_error)."""
+    import time
+    sleep = sleep or time.sleep
+    err = ""
+    for attempt in range(len(backoff) + 1):
+        if attempt:
+            print(f"bridge retry {attempt}/{len(backoff)} in {backoff[attempt - 1]}s ({err})",
+                  file=sys.stderr)
+            sleep(backoff[attempt - 1])
+        try:
+            r = httpx.post(
+                f"{bridge}/v1/chat/completions",
+                json={"model": model, "messages": [{"role": "user", "content": user_msg}]},
+                timeout=600,  # big context + the bridge serializes through one claude proc
+            )
+            if 400 <= r.status_code < 500:
+                return "", f"HTTP {r.status_code} (not retried)"
+            r.raise_for_status()
+            out = r.json()["choices"][0]["message"]["content"].strip()
+        except httpx.ReadTimeout as e:
+            return "", f"ReadTimeout: {e}"
+        except Exception as e:  # noqa: BLE001 — 5xx, connect errors, bad JSON
+            err = f"{type(e).__name__}: {e}"
+            continue
+        hollow = hollow_reason(out)
+        if not hollow:
+            return out, ""
+        err = f"bridge returned a hollow digest ({hollow})"
+    return "", err
+
+
+HOLLOW_MARKERS = ("nothing to report", "thin window", "little to report")
+
+
+def hollow_reason(text: str) -> str:
+    """Why a digest body is not worth posting, or "" if it is fine. feeds-cron
+    runs the `gbrain think` fallback through this too (`digest.py --check-hollow`)."""
+    body = re.sub(r"[_*#>\s]+", " ", text or "").strip()
+    if not body:
+        return "empty"
+    if len(body) < 200 and any(m in body.lower() for m in HOLLOW_MARKERS):
+        return f"placeholder {body[:60]!r}"
+    if len(body) < 80:
+        return f"too short ({len(body)} chars)"
+    return ""
+
+
+SELFHEAL_DIR = Path.home() / "gbrain" / "logs" / "selfheal"
+
+
+def selfheal_lines(day: date | None = None) -> list[str]:
+    """Today's feeds-watchdog summary (infra/feeds-watchdog.py) plus any digest
+    failure recorded by feeds-cron since the last good digest."""
+    day = day or date.today()
+    out = []
+    f = SELFHEAL_DIR / f"{day.isoformat()}.txt"
+    if f.is_file():
+        out += [ln for ln in f.read_text().splitlines() if ln.strip()]
+    for prev in sorted(SELFHEAL_DIR.glob("digest-failed-*.txt"))[-3:]:
+        stamp = prev.stem.removeprefix("digest-failed-")
+        try:
+            age = (day - date.fromisoformat(stamp)).days
+        except ValueError:
+            continue
+        if age in (1, 2):  # yesterday's or the day before's missing digest
+            out.append(f"previous digest {stamp} was NOT posted: "
+                       + prev.read_text().strip()[:200])
+    return out
+
+
 def main() -> int:
+    if sys.argv[1:2] == ["--check-hollow"]:
+        why = hollow_reason(sys.stdin.read())
+        print(why or "ok")
+        return 1 if why else 0
     ap = argparse.ArgumentParser()
     ap.add_argument("ingest_dir")
     ap.add_argument("--days", type=int, default=2)
@@ -332,6 +417,9 @@ def main() -> int:
 
     footer = _coverage_footer(len(blocks), dropped, ledger_date)
     banner = dark_banner(dark)
+    heal = selfheal_lines()  # feeds-watchdog summary + yesterday's unposted digest
+    if heal:
+        banner += "🩺 **Self-heal:** " + " · ".join(heal) + "\n"
     if args.dry_run:
         print(f"dry-run: {len(blocks) - len(dropped)} pages, {used // 1000}KB context, "
               f"prompt {len(user_msg) // 1000}KB — bridge call skipped", file=sys.stderr)
@@ -341,20 +429,9 @@ def main() -> int:
         print(footer)
         return 0
 
-    try:
-        r = httpx.post(
-            f"{args.bridge}/v1/chat/completions",
-            json={"model": args.model,
-                  "messages": [{"role": "user", "content": user_msg}]},
-            timeout=600,  # big context + the bridge serializes through one claude proc
-        )
-        r.raise_for_status()
-        out = r.json()["choices"][0]["message"]["content"].strip()
-    except Exception as e:  # noqa: BLE001 — caller falls back to `gbrain think`
-        print(f"bridge digest failed: {type(e).__name__}: {e}", file=sys.stderr)
-        return 1
-    if not out:
-        print("bridge returned empty digest", file=sys.stderr)
+    out, err = synthesize(args.bridge, args.model, user_msg)
+    if not out:  # caller falls back to `gbrain think`, then hollow-checks that too
+        print(f"bridge digest failed: {err}", file=sys.stderr)
         return 1
     print(f"context: {len(blocks) - len(dropped)} pages, {used // 1000}KB "
           f"(+{len(dropped)} dropped, {len(skipped)} stale-excluded)", file=sys.stderr)
