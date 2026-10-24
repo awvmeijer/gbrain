@@ -8,12 +8,18 @@ from __future__ import annotations
 
 import asyncio
 import os
+import shutil
 import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any
 
 from claude_agent_sdk import ClaudeAgentOptions, query
+
+# model-pins-v1 (2026-10-24): the SDK bundles its own CLI (2.1.191), which cannot run the 5.5
+# models. Use the installed, self-updating CLI when there is one; MAXBRIDGE_CLAUDE_BIN overrides.
+_CLI = os.environ.get("MAXBRIDGE_CLAUDE_BIN") or shutil.which("claude", path=os.pathsep.join(
+    [os.path.expanduser("~/.local/bin"), "/opt/homebrew/bin", os.environ.get("PATH", "")]))
 
 # Marker that brain hooks read to skip recording internal agent-SDK calls
 # (reflection, deep-sleep summaries, triage, …) as user `claude_session`
@@ -60,6 +66,8 @@ async def _collect(
     resume: str | None,
 ) -> ClaudeResult:
     kwargs: dict[str, Any] = {"model": model, "allowed_tools": []}
+    if _CLI:
+        kwargs["cli_path"] = _CLI
     if system is not None:
         kwargs["system_prompt"] = system
     if resume is not None:
@@ -200,6 +208,8 @@ async def stream(
         "allowed_tools": [],
         "include_partial_messages": True,
     }
+    if _CLI:
+        kwargs["cli_path"] = _CLI
     if system is not None:
         kwargs["system_prompt"] = system
     if resume is not None:

@@ -47,14 +47,16 @@ app = FastAPI(title="claude-max-bridge")
 # GBrain sends the modelId (the part after `max-bridge:`). Map friendly tier
 # names to the dated Claude ids the CLI/SDK expects; pass unknown ids through.
 _MODEL_MAP = {
-    "claude-sonnet": "claude-sonnet-4-6",
-    "claude-opus": "claude-opus-4-8",
-    "claude-haiku": "claude-haiku-4-5",
-    "sonnet": "claude-sonnet-4-6",
-    "opus": "claude-opus-4-8",
-    "haiku": "claude-haiku-4-5",
+    # model-pins-v1 (2026-10-24): the 5.5 family. These were still 4.x ids, so every
+    # "claude-opus" call (Ether's deep tier) ran on Opus 4.8.
+    "claude-sonnet": "claude-sonnet-5-5",
+    "claude-opus": "claude-opus-5-5",
+    "claude-haiku": "claude-haiku-5-5",
+    "sonnet": "claude-sonnet-5-5",
+    "opus": "claude-opus-5-5",
+    "haiku": "claude-haiku-5-5",
 }
-_DEFAULT_MODEL = "claude-sonnet-4-6"
+_DEFAULT_MODEL = "claude-sonnet-5-5"
 _PROBE_MODEL = _MODEL_MAP["claude-sonnet"]
 
 # Cold-start of `claude -p` is ~6–12s; cap concurrent CLI subprocesses so a
