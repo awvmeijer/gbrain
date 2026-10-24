@@ -465,7 +465,9 @@ FEED_MAX_AGE_H = {"discord": 30, "x": 30, "youtube": 48, "telegram": 30,
 # a feedback loop), so months of silence there is not a failure. Everything else
 # here publishes daily, so silence means a dead collector, not a slow news day.
 # Non-daily sources still report age; they just never trip the verdict.
-FEED_EXPECT_DAILY = {"x", "youtube", "telegram", "rss", "digests"}
+# memory-only-v1 (2026-10-24): those collectors and the digest are retired (Breakwise owns
+# them), so their silence is expected. Ages still report; nothing trips the verdict.
+FEED_EXPECT_DAILY: set[str] = set()
 
 # Pages scanned per source when dating a feed (newest by mtime first). Reading
 # every page costs far more than stat(); a source whose newest N files are all

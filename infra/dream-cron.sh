@@ -83,10 +83,7 @@ log "typed relations: LLM pass over recent pages (shadow)"
 "$BV" "$GB/recipes/entity-extract/llm_relations.py" --days 30 --limit 200 || log "  relations pass failed"
 "$BV" "$GB/recipes/entity-extract/eval_relations.py" | sed 's/^/  /' || true
 
-# Convergence findings (the /api/findings board). Needs the tier-0 edges above.
-# Reuses a month's synthesis while its signal classes are unchanged, so steady
-# state costs 0 Claude calls a night.
-log "convergence: detector"
-timeout 1800 "$BV" "$GB/recipes/convergence/detect.py" || log "  convergence failed"
+# Convergence findings retired 2026-10-24 (memory-only-v1): Breakwise's narrative
+# check (narrative-check-v1) replaced them.
 
 log "done"

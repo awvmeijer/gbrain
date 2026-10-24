@@ -1,12 +1,11 @@
 #!/bin/bash
-# BRAINS daily feeds cron: collect all priority feeds → import → embed →
-# synthesize a daily digest → post to Discord. Hands-off proactive digest,
-# now on GBrain. Scheduled by infra/launchd/com.brains.feeds.plist.
+# BRAINS daily feeds cron: collect Anthony's own work and notes → import →
+# embed → snapshot. No third-party scraping and no digest since memory-only-v1
+# (2026-10-24). Scheduled by infra/launchd/com.brains.feeds.plist.
 export PATH="$HOME/.bun/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 GB="$HOME/gbrain"
 ING="$HOME/brains-ingest"
 BV="$GB/sidecars/.venv/bin/python"        # self-contained: httpx + keyring
-YV="$GB/recipes/youtube-to-brain/.venv/bin/python"
 log() { echo "[$(date '+%F %T')] $*"; }
 
 # Per-step network watchdog. 2026-07-08: youtube backfill hung 4+ days on an
@@ -21,103 +20,34 @@ if command -v timeout >/dev/null 2>&1; then RUN="timeout -k 30 $STEP_TIMEOUT"
 elif command -v gtimeout >/dev/null 2>&1; then RUN="gtimeout -k 30 $STEP_TIMEOUT"
 else RUN=""; log "warn: no timeout(1) on PATH — per-step watchdog disabled"; fi
 
-log "collect: discord"
-$RUN "$BV" "$GB/recipes/discord-to-brain/collect.py" "$ING" || log "  discord collect failed"
-log "collect: youtube"
-$RUN "$YV" "$GB/recipes/youtube-to-brain/collect.py" "$ING" --limit 1 --summarize || log "  youtube collect failed"
-log "collect: youtube history drip (backfill)"
-$RUN "$YV" "$GB/recipes/youtube-to-brain/backfill.py" "$ING" --max-new 30 || log "  youtube backfill drip failed/timed out (will resume next night)"
-log "collect: x (fintwit)"
-$RUN "$BV" "$GB/recipes/x-to-brain/collect.py" "$ING" --per-handle-sleep 1.2 --max 25 --heal || log "  x collect failed"
-log "collect: rss (finance news)"
-$RUN "$BV" "$GB/recipes/rss-to-brain/collect.py" "$ING" --max 50 || log "  rss collect failed"
+# memory-only-v1 (2026-10-24, Anthony): Brains is memory only. The third-party
+# scrapers (discord, youtube + backfill, x, rss, edgar, telegram), the weekly
+# creator scorecard, the feeds watchdog and the daily digest + Discord post are
+# retired here. Breakwise collects every market source itself
+# (breakwise-standalone-v1) and posts "Breakwise Social Signals" (social-signals-v1).
+# What stays: Anthony's own work and notes (git, prs, obsidian, captures, hermes).
 log "collect: git (repo commits)"
 $RUN "$BV" "$GB/recipes/git-to-brain/collect.py" "$ING" --max 200 || log "  git collect failed"
 log "collect: prs (open pull requests)"
 $RUN "$BV" "$GB/recipes/pr-to-brain/collect.py" "$ING" || log "  pr collect failed"
-log "collect: edgar (SEC filings → ticker hubs)"
-# Writes into the brain directly via the gbrain CLI (no $ING pages); dedups on
-# accession in logs/edgar-state.json, so --days=7 keeps the daily poll cheap
-# while the state absorbs missed nights. Self-throttled under SEC's 10 req/s.
-$RUN "$BV" "$GB/recipes/edgar-to-brain/collect.py" --days=7 || log "  edgar collect failed"
 log "collect: obsidian (BrainVault)"
 # Local-disk only (no network) but keep the watchdog for symmetry. Deliberately
 # NOT in the health feed-freshness set: a quiet vault is normal, not stale.
 $RUN "$BV" "$GB/recipes/obsidian-to-brain/collect.py" "$ING" || log "  obsidian collect failed"
-log "collect: telegram (scanners)"
-# Read-only over the official Telegram API; no-ops with a clear message until
-# TELEGRAM_* secrets + session exist (recipes/telegram-to-brain/README.md).
-$RUN "$BV" "$GB/recipes/telegram-to-brain/collect.py" "$ING" --limit 50 || log "  telegram collect failed (set up creds?)"
 log "collect: manual captures (iCloud BrainCapture/)"
 "$BV" "$GB/recipes/manual-capture/import_captures.py" "$ING" || log "  capture import failed"
 log "collect: hermes sessions (mirror ~/.hermes → brain; brain is canonical)"
 # No-ops with a message until Hermes is installed (recipes/hermes-bridge/README.md).
 "$BV" "$GB/recipes/hermes-to-brain/collect.py" || log "  hermes mirror failed"
 
-# Weekly creator scorecard (Sundays): extract calls → grade vs actual closes →
-# scorecard ledger page. Before import, so tonight's import picks up the fresh
-# scorecards/<date>.md and digest.py weights sources by it same-day. grade.py
-# --refresh because cached price series end at their fetch date — without it,
-# calls that aged past a horizon since last week never get graded.
-if [ "$(date +%u)" = "7" ]; then
-  log "collect: creator scorecard (weekly)"
-  { $RUN "$BV" "$GB/recipes/creator-scorecard/extract.py" "$ING" \
-      && $RUN "$BV" "$GB/recipes/creator-scorecard/grade.py" --refresh \
-      && $RUN "$BV" "$GB/recipes/creator-scorecard/scorecard.py" "$ING"; } \
-    || log "  creator scorecard failed"
-fi
-
 log "import + embed"
 gbrain import "$ING" --no-embed || log "  import failed"
 gbrain embed --stale || log "  embed failed"
-
-log "feeds watchdog (self-heal: re-run remediation for any silent daily feed)"
-# infra/feeds-watchdog.py: health + X coverage -> one retry per unhealthy source,
-# re-import/embed only if pages landed, one-line summary in logs/selfheal/<day>.txt
-# (digest.py prints it). Never posts.
-$RUN "$BV" "$GB/infra/feeds-watchdog.py" || log "  watchdog: remediation failed for at least one feed (see logs/selfheal.log)"
 
 log "snapshot ingest corpus (git)"
 # ~/brains-ingest is a git repo (initialized 2026-08-15) — one commit per night
 # = corpus history for free. Local-only; must never fail the cron.
 git -C "$ING" add -A && git -C "$ING" commit -q -m "daily snapshot $(date +%F)" || true
-
-log "synthesize daily digest"
-# Deterministic context: recipes/fintwit-analyst/digest.py assembles ALL
-# in-window source pages from disk and synthesizes via the Max bridge.
-# (The old `gbrain think --since` path starved itself: ticker-list pages
-# rank poorly against a thematic query, and prior digests self-poison the
-# retrieval — see 2026-07-07 "no data" digest with fresh pages embedded.)
-DIGEST="$("$BV" "$GB/recipes/fintwit-analyst/digest.py" "$ING" --days 2)"
-if [ -z "$DIGEST" ]; then
-  log "  deterministic digest failed; falling back to gbrain think"
-  SINCE="$(date -v-2d +%F 2>/dev/null || date +%F)"
-  DIGEST="$(gbrain think "Across my fintwit X feed, finance YouTube creators, Telegram scanner channels, and Discord from the last day: group by theme; name every ticker with the source's direction (bullish/bearish/watch) + any level or catalyst; treat the Telegram scanner ticker lists as a SCREEN (no direction), and LEAD with OVERLAPS — a scanner-flagged ticker that an X/YouTube source also has a directional take on; then what changed (new calls, reversals, conviction shifts); call out where sources conflict, both sides attributed; attribute every line to a source. Do NOT treat mention volume as a buy/sell signal. (skill: fintwit-analyst)" --since "$SINCE" 2>/dev/null | "$BV" "$GB/infra/clean_digest.py")"
-fi
-
-# Empty-digest guard (2026-10-14 posted "_Nothing to report._" after one bridge 503).
-HOLLOW="$(printf '%s' "$DIGEST" | "$BV" "$GB/recipes/fintwit-analyst/digest.py" --check-hollow)"
-if [ -n "$DIGEST" ] && [ "$HOLLOW" != "ok" ]; then
-  log "  digest is hollow ($HOLLOW) — NOT posting; tomorrow's digest will say so"
-  mkdir -p "$GB/logs/selfheal"
-  echo "digest synthesis failed ($HOLLOW); bridge + think fallback both empty" > "$GB/logs/selfheal/digest-failed-$(date +%F).txt"
-  DIGEST=""
-fi
-
-if [ -n "$DIGEST" ]; then
-  # Persist as a page FIRST — the dashboard "Today" tab + the sidecar delivery both read it.
-  DAY="$(date '+%F')"; DDIR="$ING/digests"; mkdir -p "$DDIR"
-  printf -- "---\ntitle: Daily digest — %s\nsource: digest\ndate: %s\ntags: [digest, finance]\n---\n\n# Daily digest — %s\n\n%s\n" "$DAY" "$DAY" "$DAY" "$DIGEST" > "$DDIR/$DAY.md"
-  # Deliver via the always-on sidecar (holds Keychain access); the short-lived cron
-  # can't read a locked login keychain when the Mac slept through 06:30 (-25320).
-  log "deliver digest to Discord (via sidecar)"
-  if ! curl -sf -m 20 -X POST "http://127.0.0.1:8787/internal/post-digest" >/dev/null 2>&1; then
-    log "  sidecar delivery failed; trying direct post"
-    printf '**🧠 BRAINS daily digest — %s**\n\n%s\n' "$DAY" "$DIGEST" | "$BV" "$GB/infra/post_discord.py" || log "  direct post failed (keychain locked?)"
-  fi
-else
-  log "no digest produced; skip post"
-fi
 
 # Consolidation — the deep-sleep cycle is `gbrain dream` (facts · salience ·
 # symbol-edges · consolidate · purge). It now lives in infra/dream-cron.sh
