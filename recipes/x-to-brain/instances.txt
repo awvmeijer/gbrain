@@ -5,11 +5,13 @@
 # ~/gbrain/logs/x-instances.log. You can still edit by hand: add a host anywhere
 # and the next probe sorts it; block one for good with a `# never: <host>` line.
 
-# working (probed 2026-10-15 15:35)
+# working (probed 2026-10-24 06:31)
 nitter.meowing.monster
+nitter.mie.foundation
+nitter.netbub.com
 nitter.kareem.one
 
-# dead at 2026-10-15 15:35 — kept as last-resort failover (some recover)
+# dead at 2026-10-24 06:31 — kept as last-resort failover (some recover)
+nitter.jaydenha.uk  # HTTP 403
 shitter.thepixora.com  # HTTP 403
-nitter.jaydenha.uk  # ReadError
-nitter.netbub.com  # HTTP 418
+nitter.pp.ua  # HTTP 403

@@ -26,6 +26,8 @@ else RUN=""; log "warn: no timeout(1) on PATH — per-step watchdog disabled"; f
 # retired here. Breakwise collects every market source itself
 # (breakwise-standalone-v1) and posts "Breakwise Social Signals" (social-signals-v1).
 # What stays: Anthony's own work and notes (git, prs, obsidian, captures, hermes).
+# Email triage and telegram-approvals moved to Maia the same day (maia-hub #6): their
+# launchd jobs are unloaded and ~/.gbrain/telegram_approvals.env is renamed .retired-2026-10-24.
 log "collect: git (repo commits)"
 $RUN "$BV" "$GB/recipes/git-to-brain/collect.py" "$ING" --max 200 || log "  git collect failed"
 log "collect: prs (open pull requests)"
