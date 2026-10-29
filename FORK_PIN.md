@@ -66,7 +66,7 @@ the SHA it resolves to, never the moving tag itself.)
 ## Rebase policy
 Monthly (or for a security fix): `git fetch upstream` → trial-branch
 `git rebase upstream/master` onto a new vetted SHA → **regression gate** (E2E
-green; Max-bridge round-trip; Discord recipe smoke; embedding dim-check = 1024;
+green; Max-bridge round-trip; git-to-brain collect smoke; embedding dim-check = 1024;
 `gbrain doctor` clean) → fast-forward `brains-port` only if green. Update this
 file's pinned SHA + date on every successful rebase.
 

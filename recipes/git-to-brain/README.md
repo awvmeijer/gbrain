@@ -50,7 +50,7 @@ and a seen-SHA set makes re-runs idempotent regardless of cursor state.
 gbrain import ~/brains-ingest --no-embed && gbrain embed --stale
 ```
 
-Wired into `infra/feeds-cron.sh` right after the rss collector. Edit
+Wired into `infra/feeds-cron.sh` as the first collector. Edit
 `repos.txt` (`slug | path | remote`) to add/remove repos — a new repo's first
 run only initializes its cursor (zero pages), by design.
 
