@@ -15,7 +15,6 @@ captures, so a leaked key's blast radius is spam.
 """
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import json
 import os
@@ -23,7 +22,6 @@ import re
 import subprocess
 import threading
 import time
-import urllib.request
 from datetime import datetime
 from pathlib import Path
 
@@ -115,8 +113,6 @@ def _log(msg: str) -> None:
 # pop the unlock dialog or die -25320/-60008 when the login keychain is locked.
 _SECRET_FILES = {
     "DISCORD_BOT_TOKEN": HOME / ".gbrain" / "discord_bot.token",
-    "DISCORD_WEBHOOK_URL": HOME / ".gbrain" / "discord_webhook.url",
-    "TRADINGVIEW_TOKEN": HOME / ".gbrain" / "tradingview.token",
 }
 _SECRET_CACHE: dict[str, str] = {}
 DISCORD_TOKEN_FILE = _SECRET_FILES["DISCORD_BOT_TOKEN"]
@@ -455,25 +451,6 @@ def _svc(url: str) -> bool:
         return False
 
 
-FEED_MAX_AGE_H = {"discord": 30, "x": 30, "youtube": 48, "telegram": 30,
-                  "rss": 30, "digests": 30}
-
-# Sources where silence is an INCIDENT, vs. sources where quiet is just quiet.
-# Precedent: feeds-cron.sh keeps the Obsidian vault out of the freshness set
-# because "a quiet vault is normal, not stale". Discord is the same shape — the
-# bot sees one low-traffic channel (its own digest channel is excluded to avoid
-# a feedback loop), so months of silence there is not a failure. Everything else
-# here publishes daily, so silence means a dead collector, not a slow news day.
-# Non-daily sources still report age; they just never trip the verdict.
-# memory-only-v1 (2026-10-24): those collectors and the digest are retired (Breakwise owns
-# them), so their silence is expected. Ages still report; nothing trips the verdict.
-FEED_EXPECT_DAILY: set[str] = set()
-
-# Pages scanned per source when dating a feed (newest by mtime first). Reading
-# every page costs far more than stat(); a source whose newest N files are all
-# old is stale by any definition.
-FEED_SCAN_FILES = 200
-
 APPROVALS_ENV = HOME / ".gbrain" / "telegram_approvals.env"
 
 
@@ -501,39 +478,6 @@ def _postgres_ok() -> bool:
             return True
     except Exception:
         return False
-
-
-def _newest_age_h(subdir: str) -> float | None:
-    """Age of the freshest CONTENT in a feed dir, from its frontmatter `date:`.
-
-    2026-09-21: this used max(st_mtime), which any collector that rewrites
-    unchanged files pins to "now" forever. The discord recipe rewrote the same
-    April-June pages every night, so the feed reported 17h fresh off month-old
-    content — while x sat 761h dark and youtube 185h. mtime measures the
-    collector RUNNING, not the feed DELIVERING; only the content date does that.
-    Falls back to mtime when no page in the scan window carries a date.
-    """
-    d = ING / subdir
-    if not d.exists():
-        return None
-    files = list(d.rglob("*.md"))
-    if not files:
-        return None
-    files.sort(key=lambda f: f.stat().st_mtime, reverse=True)
-    window = files[:FEED_SCAN_FILES]
-    newest: float | None = None
-    for f in window:
-        try:
-            day = _field(f.read_text(errors="ignore"), "date")[:10]
-            # End-of-day: a page dated today is 0h old, not up-to-24h old.
-            ts = datetime.strptime(day, "%Y-%m-%d").timestamp() + 86399
-        except (OSError, ValueError):
-            continue
-        if newest is None or ts > newest:
-            newest = ts
-    if newest is None:  # undated corpus (or unreadable) — mtime is all we have
-        newest = max(f.stat().st_mtime for f in window)
-    return max(0.0, (time.time() - newest) / 3600.0)
 
 
 def _field(content: str, key: str) -> str:
@@ -579,17 +523,12 @@ def api_health(x_brain_key: str | None = Header(default=None)):
     engine = _engine()
     if engine != "pglite":
         services["postgres"] = _postgres_ok()
-    feeds, stale = [], False
-    for src, maxh in FEED_MAX_AGE_H.items():
-        age = _newest_age_h(src)
-        daily = src in FEED_EXPECT_DAILY
-        is_stale = daily and age is not None and age > maxh
-        stale = stale or is_stale
-        feeds.append({"source": src, "age_hours": round(age, 1) if age is not None else None,
-                      "stale": is_stale, "expect_daily": daily})
     down = not all(services.values())
-    return {"verdict": "down" if down else ("warn" if stale else "ok"),
-            "services": services, "feeds": feeds, "engine": engine}
+    # memory-only-v1 (2026-10-24): no third-party feeds left to date, so the
+    # feed-freshness check is gone. `feeds` stays (empty) because the dashboard
+    # served at / reads health.feeds.
+    return {"verdict": "down" if down else "ok", "services": services, "feeds": [],
+            "engine": engine}
 
 
 @app.get("/api/pages")
@@ -1053,129 +992,6 @@ async def api_watchlist_put(request: Request, x_brain_key: str | None = Header(d
             "The EDGAR / permit / convergence pollers read this page.\n")
     _gbrain(["put", "finance/watchlist", "--content", body])
     return {"ok": True, "held": held, "watched": watched}
-
-
-def _parse_tv_text(raw: str) -> dict:
-    """TradingView alerts send JSON when you template it, else a freeform string.
-    Accept `k=v;k=v`, or scrape `SYMBOL ... 123.4` from prose."""
-    out: dict = {}
-    if "=" in raw and "{" not in raw:
-        for part in re.split(r"[;\n]", raw):
-            if "=" in part:
-                k, v = part.split("=", 1)
-                out[k.strip().lower()] = v.strip()
-    if "symbol" not in out and "ticker" not in out:
-        m = re.search(r"\b([A-Z]{1,6})(?::[A-Z]{1,6})?\b", raw)
-        if m:
-            out["symbol"] = m.group(1)
-    if "price" not in out and "level" not in out:
-        m = re.search(r"(\d+(?:\.\d+)?)", raw)
-        if m:
-            out["price"] = m.group(1)
-    if "message" not in out:
-        out["message"] = raw.strip()[:280]
-    return out
-
-
-def _ensure_ticker(sym: str) -> str:
-    slug = f"ticker/{sym.lower()}"
-    if not (_gbrain(["get", slug]) or "").strip():
-        _gbrain(["put", slug, "--content",
-                 f"---\ntype: ticker\ntitle: {sym}\nsymbol: {sym}\nsource: tradingview\ntags: [ticker]\n---\n\n"
-                 f"# {sym}\n\nTicker hub.\n"])
-    return slug
-
-
-@app.post("/webhooks/tradingview")
-async def tradingview_webhook(request: Request):
-    """TradingView alert → an `index_level` signal page + a `tracks_level` edge to
-    the ticker, so a level break becomes the price/level signal class the
-    convergence engine reads. TV can't send custom headers reliably, so the shared
-    secret rides in the body/query (`token=`), checked against Keychain
-    `TRADINGVIEW_TOKEN` when configured (public over the Funnel — set one)."""
-    raw = (await request.body()).decode("utf-8", "ignore")
-    try:
-        payload = json.loads(raw) if raw.strip().startswith("{") else _parse_tv_text(raw)
-    except Exception:
-        payload = _parse_tv_text(raw)
-    # _secret propagates a Keychain failure → 500, which is the safe direction
-    # here (fail closed): this endpoint is public over the Funnel.
-    want = _secret("TRADINGVIEW_TOKEN")
-    if want and (payload.get("token") or request.query_params.get("token")) != want:
-        raise HTTPException(401, "bad tradingview token")
-    sym = re.sub(r"^[A-Za-z]+:", "", str(payload.get("symbol") or payload.get("ticker") or "")).upper().strip()
-    if not re.fullmatch(r"[A-Z]{1,6}", sym):
-        raise HTTPException(400, "no valid symbol in alert")
-    price = str(payload.get("price") or payload.get("close") or "").strip()
-    level = str(payload.get("level") or payload.get("value") or price).strip()
-    direction = str(payload.get("direction") or payload.get("action") or "").lower().strip()
-    msg = str(payload.get("message") or payload.get("comment") or raw[:200]).replace('"', "'").strip()
-    day = datetime.now().strftime("%Y-%m-%d")
-    slug = f"index_level/{sym.lower()}-{day}"
-    body = (f"---\ntype: index_level\ntitle: \"{sym} level {direction or 'alert'} {level}\"\n"
-            f"source: tradingview\nsymbol: {sym}\nlevel: \"{level}\"\nprice: \"{price}\"\n"
-            f"direction: {direction or 'na'}\ndate: {day}\ntags: [level, tradingview, {sym.lower()}]\n---\n\n"
-            f"# {sym} — level {direction or 'alert'} {level}\n\n"
-            f"- **Symbol:** ${sym}  ·  **Level:** {level}  ·  **Price:** {price}  ·  **Direction:** {direction or 'n/a'}\n"
-            f"- **Alert:** {msg}\n")
-    tslug = _ensure_ticker(sym)
-    _gbrain(["put", slug, "--content", body])
-    _gbrain(["link", slug, tslug, "--link-type", "tracks_level", "--link-source", "tradingview"])
-    _log(f"tradingview alert: {sym} {direction} {level} → {slug}")
-    return {"ok": True, "symbol": sym, "level": level, "slug": slug}
-
-
-@app.post("/internal/post-digest")
-async def internal_post_digest(request: Request):
-    """Deliver the latest daily digest to Discord FROM the always-on sidecar, which
-    holds Keychain access. The short-lived feeds-cron can't read the Keychain when
-    the Mac slept through 06:30 (login keychain locked → -25320), so delivery moved
-    here. Localhost-only (no key needed — the cron curls 127.0.0.1)."""
-    host = request.client.host if request.client else ""
-    if host not in ("127.0.0.1", "::1"):
-        raise HTTPException(403, "internal endpoint (localhost only)")
-    try:
-        webhook = _secret("DISCORD_WEBHOOK_URL")
-    except Exception as e:  # noqa: BLE001 — locked keychain + no file yet
-        _log(f"digest webhook secret unavailable: {e}")
-        return {"ok": False, "reason": "webhook secret unavailable (keychain locked?)"}
-    if not webhook:
-        return {"ok": False, "reason": "no DISCORD_WEBHOOK_URL"}
-    ddir = HOME / "brains-ingest" / "digests"
-    files = sorted(ddir.glob("*.md"), reverse=True) if ddir.exists() else []
-    if not files:
-        return {"ok": False, "reason": "no digest page"}
-    raw = files[0].read_text()
-    body = re.sub(r"^---.*?---\n", "", raw, count=1, flags=re.DOTALL).strip()
-    text = f"**🧠 BRAINS daily digest — {files[0].stem}**\n\n{body}"
-    chunks, cur = [], ""
-    for line in text.splitlines(keepends=True):
-        if len(cur) + len(line) > 1900 and cur:
-            chunks.append(cur); cur = ""
-        cur += line
-    if cur:
-        chunks.append(cur)
-    # Send the whole digest (digests run 14-23KB ≈ 8-13 chunks); the old cap of 6
-    # silently dropped the coverage footer. 15 bounds a runaway digest, and the
-    # pause keeps us under Discord's webhook rate limit (5 requests / 2 s).
-    max_chunks = 15
-    if len(chunks) > max_chunks:
-        chunks = chunks[:max_chunks - 1] + [f"… truncated — full digest: /api/today ({files[0].stem})"]
-    sent = 0
-    for i, ch in enumerate(chunks):
-        if i:
-            await asyncio.sleep(0.5)
-        try:
-            # Discord requires a real User-Agent — the default Python-urllib UA 403s.
-            req = urllib.request.Request(webhook, data=json.dumps({"content": ch}).encode(),
-                                         headers={"Content-Type": "application/json",
-                                                  "User-Agent": "BRAINS-digest/1.0 (+https://github.com/awvmeijer/gbrain)"},
-                                         method="POST")
-            urllib.request.urlopen(req, timeout=15)
-            sent += 1
-        except Exception as e:
-            _log(f"digest post chunk failed: {e}")
-    return {"ok": sent > 0, "sent": sent, "digest": files[0].stem}
 
 
 def _ics_esc(s: str) -> str:

@@ -25,7 +25,7 @@ On the iPhone, open **Shortcuts** → **+** → add these actions in order:
 4. Name the Shortcut e.g. **→ Brain** and give it an icon.
 
 Now in **Discord** (or anywhere): long-press a message → **Share** → **→ Brain**.
-Done. It appears in the next digest. (To make it search-able immediately, run the
+Done. It is imported on the next daily feeds run. (To make it search-able immediately, run the
 import + embed manually — see below.)
 
 > Tip: filename uniqueness — if Save File ever complains about a duplicate name,
@@ -42,10 +42,8 @@ gbrain import ~/brains-ingest --no-embed && gbrain embed --stale
 
 Run those two lines by hand anytime to pull captures in immediately.
 
-## The zero-Shortcut alternative (Discord → Discord)
+## Retired: the zero-Shortcut Discord alternative
 
-If you'd rather not use a Shortcut: create **your own** Discord server, add the Brain
-OS bot to it, make a `#feed` channel, and **Forward** messages from the paid rooms
-into it. The existing `recipes/discord-to-brain` collector reads your bot's channels,
-so anything you forward there is ingested with full author/date/message metadata —
-no manual-capture step needed.
+This used to route forwarded Discord messages through `recipes/discord-to-brain`.
+That collector retired with memory-only-v1 (2026-10-24; now under
+`recipes/retired/`), so the Shortcut above, or a POST to `/capture`, is the way in.

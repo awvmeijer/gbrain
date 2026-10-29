@@ -21,7 +21,7 @@ LA = Path.home() / "Library" / "LaunchAgents"
 PURPOSE = {
     "com.brains.max-bridge": "Claude Max CLI bridge — OpenAI-compat shim → flat-fee Claude (always-on)",
     "com.brains.reranker": "bge-reranker-v2-m3 via llama-server — search reranking (always-on)",
-    "com.brains.feeds": "Daily feeds digest — collect Discord/YouTube/X → think → post to Discord",
+    "com.brains.feeds": "Daily memory feeds — collect git/PRs/Obsidian/captures/Hermes → import → embed (no digest)",
     "com.brain.ollama": "Ollama server — bge-m3 embeddings + qwen3 local LLM (always-on)",
 }
 

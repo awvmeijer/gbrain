@@ -43,9 +43,13 @@ gbrain config set search.exclude_slug_prefixes "digests/,scorecards/"
 gbrain config set search.recency_default on
 ```
 
-(`scorecards/` — frontmatter `source: scorecard` — is written by
+(`scorecards/` — frontmatter `source: scorecard` — was written by
 `recipes/creator-scorecard/` and is the same synthesis class as digests:
 derived from the corpus, cited by the next digest. Exclude it from day one.)
+
+Since memory-only-v1 (2026-10-24) neither digests nor scorecards are produced
+(the digest and `recipes/retired/creator-scorecard/` are retired), but the old
+pages stay in the corpus, so the exclusion still matters.
 
 Both keys default to **unset = current behavior**. `gbrain search --include-synthetic <q>`
 re-includes the excluded synthesis pages for a single query.
